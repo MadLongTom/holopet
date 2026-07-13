@@ -1,4 +1,13 @@
 local APP_DIR = "/sd/apps/holo_pet"
+local APP_ID = nil
+if app and app.current then
+  local current = app.current()
+  if current and type(current.id) == "string" and current.id ~= "" then
+    APP_ID = current.id
+    APP_DIR = "/sd/apps/" .. APP_ID
+  end
+end
+
 if file and file.exists and not file.exists(APP_DIR .. "/config.lua") then
   for _, dir in ipairs({
     "/sd/apps/holopet",
@@ -11,7 +20,8 @@ if file and file.exists and not file.exists(APP_DIR .. "/config.lua") then
   end
 end
 
-local APP_SLUG = APP_DIR:match("/sd/apps/([^/]+)")
+local APP_SLUG = APP_ID
+  or APP_DIR:match("/sd/apps/([^/]+)")
   or APP_DIR:match("^(holo_?pet)")
   or "holo_pet"
 

@@ -57,8 +57,10 @@ Copy every file inside `package/` to the following directory on the HoloCubic:
 /sd/apps/holo_pet/
 ```
 
-The app supports both `holo_pet` and `holopet` as its directory name. Rescan the
-app list (or restart the device), then launch **Clawd Monitor**.
+The app supports both `holo_pet` and `holopet` as its directory name. Firmware
+app-store installs derive the directory from their manifest `app_id` and may
+therefore install this app at `/sd/apps/holopet/`. Rescan the app list (or
+restart the device), then launch **Clawd Monitor**.
 
 On the Codex PC, install the bridge and hooks from the repository root:
 
