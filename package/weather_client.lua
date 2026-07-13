@@ -152,7 +152,7 @@ function WeatherClient:resolve_location(address, done)
   end
   if not http or not http.get then done(false, "HTTP missing"); return end
   local url = "https://geocoding-api.open-meteo.com/v1/search?name=" .. url_encode(address)
-    .. "&count=1&language=en&format=json"
+    .. "&count=1&language=zh&format=json"
   http.get(url, { timeout = 12000, headers = { ["Accept-Encoding"] = "identity" } }, function(code, body)
     if not self.running then return end
     local doc = code == 200 and decode(body) or nil
