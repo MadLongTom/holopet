@@ -4,6 +4,9 @@ Clawd Monitor displays live Codex lifecycle state and local hourly weather on a
 320 x 240 HoloCubic. Every mascot frame is generated from the canonical 12 x 8
 sprite from clawdmoji project.
 
+<img width="976" height="268" alt="overview" src="https://github.com/user-attachments/assets/80f094e4-9e48-4746-961e-5b24cd0ace61" />
+
+
 ## Display
 
 - Codex state animations are native 160 x 160 indexed GIFs. There is no runtime
