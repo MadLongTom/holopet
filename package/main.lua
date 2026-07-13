@@ -9,6 +9,7 @@ local config = dofile(APP_DIR .. "/config.lua")
 local CodexClient = dofile(APP_DIR .. "/codex_client.lua")
 local HoloWeb = dofile(APP_DIR .. "/web.lua")
 local WeatherClient = dofile(APP_DIR .. "/weather_client.lua")
+local Timezone = dofile(APP_DIR .. "/timezone.lua")
 local ClawdPack = dofile(APP_DIR .. "/assets/clawdmoji/manifest.lua")
 
 local APP_KEY = "HOLO_PET_APP"
@@ -19,7 +20,7 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.0.0",
+  VERSION = "1.0.1",
   running = true,
   timer = nil,
   client = nil,
@@ -125,8 +126,9 @@ local SESSION_MEME_MIN_MS = 60 * 1000
 local SESSION_MEME_MAX_MS = 150 * 1000
 local PAGE_SWITCH_COOLDOWN_MS = 1000
 local WEATHER_FALLBACK_REFRESH_MS = 15 * 60 * 1000
-local LOCAL_TZ_OFFSET_SEC = 8 * 60 * 60
-local LOCAL_TIMEZONE = "CST-8"
+local SETTINGS_PATH = "/sd/apps/settings.json"
+local DEFAULT_TIMEZONE = "CST-8"
+local LOCAL_TIMEZONE = Timezone.read_settings(SETTINGS_PATH, DEFAULT_TIMEZONE)
 local NTP_SERVER = "ntp.aliyun.com"
 local NTP_RETRY_MS = 30 * 1000
 
@@ -918,7 +920,8 @@ local function read_clock_text()
   if rtctime and rtctime.get and rtctime.epoch2cal then
     local ok_get, epoch = pcall(rtctime.get)
     if ok_get and type(epoch) == "number" and epoch > 1600000000 then
-      local ok_cal, year, mon, day, hour, minute = pcall(rtctime.epoch2cal, epoch + LOCAL_TZ_OFFSET_SEC)
+      local offset = Timezone.offset_for_epoch(LOCAL_TIMEZONE, epoch)
+      local ok_cal, year, mon, day, hour, minute = pcall(rtctime.epoch2cal, epoch + offset)
       if ok_cal and type(year) == "number" and year >= 2024 and type(hour) == "number" and type(minute) == "number" then
         return string.format("%02d:%02d", hour, minute)
       end
@@ -927,7 +930,8 @@ local function read_clock_text()
   if os and os.time and os.date then
     local ok_epoch, epoch = pcall(os.time)
     if ok_epoch and type(epoch) == "number" and epoch > 1600000000 then
-      local ok_date, value = pcall(os.date, "!%H:%M", epoch + LOCAL_TZ_OFFSET_SEC)
+      local offset = Timezone.offset_for_epoch(LOCAL_TIMEZONE, epoch)
+      local ok_date, value = pcall(os.date, "!%H:%M", epoch + offset)
       if ok_date and type(value) == "string" then return value end
     end
   end

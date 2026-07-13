@@ -25,7 +25,9 @@ sprite from clawdmoji project.
   uninterrupted current state, followed by 5h usage, reset time, and week use.
 - A fresh IDLE screen labels those slots as `C CHAT / S STATE`; after a session
   completes, it keeps the previous total as `Cmm:ss / LAST`.
-- The top bar shows the current China Standard Time beside the bridge status.
+- The top bar shows the device-local time beside the bridge status. At startup,
+  the app reads the POSIX `timezone` value from `/sd/apps/settings.json`, applies
+  it through the runtime time module, and honors configured DST transition rules.
 
 ## Weather instrument
 
@@ -34,12 +36,39 @@ The weather page reads the location already stored by the system in
 requests current conditions plus 8 hours of hourly temperature, humidity,
 precipitation probability/amount, wind direction/speed, and gusts.
 
+The device clock and weather location are intentionally configured separately:
+`timezone` controls the app clock, while `weather_address` selects the forecast
+location. Open-Meteo timestamps use the resolved city's IANA timezone; the
+`DATA` time is therefore local to the forecast city, while `SYNC` uses the
+device timezone.
+
 The hero animation is selected from 60 generated ClawdMoji scenes: 10 weather
 families multiplied by 6 temperature/humidity moods. The rail prioritizes the
 next three hours' rain probability/time and maximum gust, followed by four
 hourly cells. The last good forecast remains visible if a refresh fails.
 
 ## Connection
+
+### Device package
+
+Copy every file inside `package/` to the following directory on the HoloCubic:
+
+```text
+/sd/apps/holo_pet/
+```
+
+Keep the app directory name as `holo_pet`, because the current Lua entry point
+uses that path for its configuration, clients, and generated assets. Rescan the
+app list (or restart the device), then launch **Clawd Monitor**.
+
+On the Codex PC, install the bridge and hooks from the repository root:
+
+```powershell
+node bridge/install-codex-hook.js
+```
+
+The computer and HoloCubic must be on the same LAN. If Codex asks you to review
+the new command hook, open `/hooks` and approve it before continuing.
 
 The data path follows the same host-configured pattern as AIDA Monitor:
 
@@ -136,5 +165,15 @@ contents are not sent.
 
 ```powershell
 node --test bridge/codex-holocubic-hook.test.js
-npx -y luaparse -q package/weather_client.lua package/config.lua package/codex_client.lua package/web.lua
+npx -y luaparse -q package/weather_client.lua package/config.lua package/codex_client.lua package/web.lua package/timezone.lua
+npx -y --package=fengari-node-cli fengari tools/test_timezone.lua
 ```
+
+## License and artwork
+
+The project code is available under the [MIT License](LICENSE).
+
+Clawd character artwork and Anthropic marks remain the property of Anthropic,
+PBC. This is an unofficial project and the MIT License does not grant rights to
+those characters or marks. See [ASSET-NOTICE.md](ASSET-NOTICE.md) for the
+upstream ClawdMoji attribution.
