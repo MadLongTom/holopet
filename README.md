@@ -57,9 +57,10 @@ Copy every file inside `package/` to the following directory on the HoloCubic:
 /sd/apps/holo_pet/
 ```
 
-Keep the app directory name as `holo_pet`, because the current Lua entry point
-uses that path for its configuration, clients, and generated assets. Rescan the
-app list (or restart the device), then launch **Clawd Monitor**.
+The app supports both `holo_pet` and `holopet` as its directory name. Firmware
+app-store installs derive the directory from their manifest `app_id` and may
+therefore install this app at `/sd/apps/holopet/`. Rescan the app list (or
+restart the device), then launch **Clawd Monitor**.
 
 On the Codex PC, install the bridge and hooks from the repository root:
 
