@@ -1,9 +1,19 @@
 local APP_DIR = "/sd/apps/holo_pet"
 if file and file.exists and not file.exists(APP_DIR .. "/config.lua") then
-  for _, dir in ipairs({ "holo_pet/package", "holo_pet" }) do
+  for _, dir in ipairs({
+    "/sd/apps/holopet",
+    "holo_pet/package",
+    "holo_pet",
+    "holopet/package",
+    "holopet",
+  }) do
     if file.exists(dir .. "/config.lua") then APP_DIR = dir; break end
   end
 end
+
+local APP_SLUG = APP_DIR:match("/sd/apps/([^/]+)")
+  or APP_DIR:match("^(holo_?pet)")
+  or "holo_pet"
 
 local config = dofile(APP_DIR .. "/config.lua")
 local CodexClient = dofile(APP_DIR .. "/codex_client.lua")
@@ -11,6 +21,20 @@ local HoloWeb = dofile(APP_DIR .. "/web.lua")
 local WeatherClient = dofile(APP_DIR .. "/weather_client.lua")
 local Timezone = dofile(APP_DIR .. "/timezone.lua")
 local ClawdPack = dofile(APP_DIR .. "/assets/clawdmoji/manifest.lua")
+
+local function rebase_asset_paths(value)
+  if type(value) == "string" then
+    return (value:gsub("^/sd/apps/holo_pet/", APP_DIR .. "/"))
+  end
+  if type(value) == "table" then
+    for key, item in pairs(value) do
+      value[key] = rebase_asset_paths(item)
+    end
+  end
+  return value
+end
+
+rebase_asset_paths(ClawdPack)
 
 local APP_KEY = "HOLO_PET_APP"
 
@@ -166,17 +190,18 @@ local EVENT_ALIASES = {
   ["response_item:web_search_call"] = "PreToolUse",
 }
 
+local MEME_DIR = APP_DIR .. "/assets/clawdmoji/meme/"
 local SESSION_MEMES = {
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/dealwithit.gif", label = "DEAL WITH IT" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/fire.gif", label = "THIS IS FINE" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/notclawd.gif", label = "NOT CLAWD" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/mariachi.gif", label = "SHIP FIESTA" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/surf.gif", label = "SURFING IT" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/keyboard.gif", label = "KEYBOARD SMASH" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/popcorn.gif", label = "POPCORN MODE" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/bonk.gif", label = "BONK" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/stonks.gif", label = "STONKS" },
-  { path = "/sd/apps/holo_pet/assets/clawdmoji/meme/panic.gif", label = "PANIC BUTTON" },
+  { path = MEME_DIR .. "dealwithit.gif", label = "DEAL WITH IT" },
+  { path = MEME_DIR .. "fire.gif", label = "THIS IS FINE" },
+  { path = MEME_DIR .. "notclawd.gif", label = "NOT CLAWD" },
+  { path = MEME_DIR .. "mariachi.gif", label = "SHIP FIESTA" },
+  { path = MEME_DIR .. "surf.gif", label = "SURFING IT" },
+  { path = MEME_DIR .. "keyboard.gif", label = "KEYBOARD SMASH" },
+  { path = MEME_DIR .. "popcorn.gif", label = "POPCORN MODE" },
+  { path = MEME_DIR .. "bonk.gif", label = "BONK" },
+  { path = MEME_DIR .. "stonks.gif", label = "STONKS" },
+  { path = MEME_DIR .. "panic.gif", label = "PANIC BUTTON" },
 }
 
 local ALLOWED_STATES = {
@@ -1504,7 +1529,7 @@ bind_keys()
 APP.web = HoloWeb.new({
   config = config,
   config_path = APP_DIR .. "/config.lua",
-  route_base = (app and app.route_base and app.route_base()) or "/holo_pet",
+  route_base = (app and app.route_base and app.route_base()) or ("/" .. APP_SLUG),
   restart = start_client,
   set_page = show_page,
   connection_state = function()
