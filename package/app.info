@@ -3,4 +3,4 @@ kind = app
 entry = main.lua
 icon = main.png
 description = ClawdMoji Codex companion with hourly weather
-version = 1.0.2
+version = 1.1.0

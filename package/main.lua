@@ -31,6 +31,11 @@ local HoloWeb = dofile(APP_DIR .. "/web.lua")
 local WeatherClient = dofile(APP_DIR .. "/weather_client.lua")
 local Timezone = dofile(APP_DIR .. "/timezone.lua")
 local ClawdPack = dofile(APP_DIR .. "/assets/clawdmoji/manifest.lua")
+local ConsoleText = nil
+do
+  local ok, module_or_error = pcall(dofile, APP_DIR .. "/console_text.lua")
+  if ok and type(module_or_error) == "table" then ConsoleText = module_or_error end
+end
 
 local function rebase_asset_paths(value)
   if type(value) == "string" then
@@ -54,7 +59,7 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.0.2",
+  VERSION = "1.1.0",
   running = true,
   timer = nil,
   client = nil,
@@ -97,6 +102,8 @@ local APP = {
     five_hour_reset_text = "--:--",
     weekly_percent = nil,
   },
+  console_renderer = nil,
+  font_error = "",
   ui = {},
   remote = {
     state = "idle",
@@ -126,12 +133,18 @@ _G[APP_KEY] = APP
 
 local W, H = 320, 240
 local MAIN = (rawget(_G, "LV_PART_MAIN") or 0) | (rawget(_G, "LV_STATE_DEFAULT") or 0)
-local FONT_10 = rawget(_G, "LV_FONT_MONTSERRAT_10") or 10
-local FONT_12 = rawget(_G, "LV_FONT_MONTSERRAT_12") or 12
-local FONT_14 = rawget(_G, "LV_FONT_MONTSERRAT_14") or 14
-local FONT_16 = rawget(_G, "LV_FONT_MONTSERRAT_16") or 16
-local FONT_28 = rawget(_G, "LV_FONT_MONTSERRAT_28") or FONT_16
+local FALLBACK_FONT_10 = rawget(_G, "LV_FONT_MONTSERRAT_10") or 10
+local FALLBACK_FONT_12 = rawget(_G, "LV_FONT_MONTSERRAT_12") or 12
+local FALLBACK_FONT_14 = rawget(_G, "LV_FONT_MONTSERRAT_14") or 14
+local FALLBACK_FONT_16 = rawget(_G, "LV_FONT_MONTSERRAT_16") or 16
+local FALLBACK_FONT_28 = rawget(_G, "LV_FONT_MONTSERRAT_28") or FALLBACK_FONT_16
+local FONT_10 = { size = 10, fallback = FALLBACK_FONT_10 }
+local FONT_12 = { size = 12, fallback = FALLBACK_FONT_12 }
+local FONT_14 = { size = 14, fallback = FALLBACK_FONT_14 }
+local FONT_16 = { size = 16, fallback = FALLBACK_FONT_16 }
+local FONT_28 = { size = 28, fallback = FALLBACK_FONT_28 }
 local ALIGN_LEFT = rawget(_G, "LV_TEXT_ALIGN_LEFT") or 0
+local ALIGN_CENTER = rawget(_G, "LV_TEXT_ALIGN_CENTER") or 1
 local ALIGN_RIGHT = rawget(_G, "LV_TEXT_ALIGN_RIGHT") or 2
 local FLAG_SCROLLABLE = rawget(_G, "LV_OBJ_FLAG_SCROLLABLE")
 local FLAG_OVERFLOW = rawget(_G, "LV_OBJ_FLAG_OVERFLOW_VISIBLE")
@@ -151,6 +164,16 @@ local C = {
   warn = 0xFFD166,
   error = 0xFF6B6B,
 }
+
+-- The firmware can load LVGL SUBPX_HOR fonts but does not paint their glyphs.
+-- Rasterize text in the app instead, then commit the already-composited RGB565
+-- pixels to small canvases. Clawd GIFs stay on the native pixel path.
+local CONSOLE = ConsoleText and ConsoleText.open({
+  module_path = APP_DIR .. "/modules/aida_font.so",
+  font_path = APP_DIR .. "/font/clawd_console.ttf",
+}) or nil
+APP.console_renderer = CONSOLE
+APP.font_error = CONSOLE and CONSOLE.error or "console renderer unavailable"
 
 local IDLE_VISUALS = ClawdPack.events.Idle or {}
 
@@ -282,7 +305,175 @@ local function clip(value, max_len)
   return text:sub(1, math.max(0, max_len - 3)) .. "..."
 end
 
+local function compositor_align(value)
+  if value == ALIGN_RIGHT then return 2 end
+  if value == ALIGN_CENTER then return 1 end
+  return 0
+end
+
+local function weather_city_text(state)
+  for _, value in ipairs({ state and state.city, state and state.address }) do
+    local text = tostring(value or "")
+    if text ~= "" and not text:find("[\128-\255]") then return text end
+  end
+  return "WEATHER"
+end
+
+local raw_lv_label_create = lv_label_create
+local raw_lv_label_set_text = lv_label_set_text
+local raw_lv_obj_create = lv_obj_create
+local raw_lv_obj_set_size = lv_obj_set_size
+local raw_lv_obj_set_pos = lv_obj_set_pos
+local raw_lv_obj_set_style_bg_color = lv_obj_set_style_bg_color
+local raw_lv_obj_set_style_text_color = lv_obj_set_style_text_color
+local raw_lv_obj_set_style_text_font = lv_obj_set_style_text_font
+local raw_lv_obj_set_style_text_align = lv_obj_set_style_text_align
+local raw_lv_obj_set_style_text_opa = lv_obj_set_style_text_opa
+local OBJECT_BG = {}
+local OBJECT_BG_OPA = {}
+local OBJECT_PARENT = {}
+local TEXT_CHILDREN = {}
+local ALL_TEXT_TOKENS = {}
+local render_console_text
+
+local function is_console_text(obj)
+  return type(obj) == "table" and obj._clawd_console_text == true
+end
+
+local function blend_color(foreground, background, opacity)
+  opacity = math.max(0, math.min(255, tonumber(opacity) or 255))
+  if opacity >= 255 then return tonumber(foreground) or 0 end
+  local inverse = 255 - opacity
+  foreground, background = tonumber(foreground) or 0, tonumber(background) or 0
+  local fr, fg, fb = (foreground >> 16) & 0xFF, (foreground >> 8) & 0xFF, foreground & 0xFF
+  local br, bg, bb = (background >> 16) & 0xFF, (background >> 8) & 0xFF, background & 0xFF
+  local r = math.floor((fr * opacity + br * inverse + 127) / 255)
+  local g = math.floor((fg * opacity + bg * inverse + 127) / 255)
+  local b = math.floor((fb * opacity + bb * inverse + 127) / 255)
+  return (r << 16) | (g << 8) | b
+end
+
+local function fallback_text_token(token)
+  if token.native then return token.native end
+  if token.canvas and lv_obj_del then pcall(lv_obj_del, token.canvas) end
+  token.canvas = nil
+  local native = raw_lv_label_create(token.parent)
+  token.native = native
+  raw_lv_obj_set_size(native, token.width or 1, token.height or 1)
+  raw_lv_obj_set_pos(native, token.x or 0, token.y or 0)
+  raw_lv_obj_set_style_text_color(native, token.color or C.cream, MAIN)
+  raw_lv_obj_set_style_text_font(native, token.fallback_font or FALLBACK_FONT_12, MAIN)
+  if raw_lv_obj_set_style_text_opa then raw_lv_obj_set_style_text_opa(native, 255, MAIN) end
+  if raw_lv_obj_set_style_text_align then
+    raw_lv_obj_set_style_text_align(native, token.align or ALIGN_LEFT, MAIN)
+  end
+  raw_lv_label_set_text(native, tostring(token.text or ""))
+  return native
+end
+
+local function disable_console(reason)
+  APP.font_error = tostring(reason or "console renderer disabled")
+  if CONSOLE then CONSOLE:disable(APP.font_error) end
+  for _, token in ipairs(ALL_TEXT_TOKENS) do fallback_text_token(token) end
+end
+
+local function lv_label_create(parent)
+  if not CONSOLE or not CONSOLE.ready then return raw_lv_label_create(parent) end
+  local token = {
+    _clawd_console_text = true,
+    parent = parent,
+    width = 1,
+    height = 1,
+    x = 0,
+    y = 0,
+    size = 12,
+    color = C.cream,
+    background = C.bg,
+    align = ALIGN_LEFT,
+    fallback_font = FALLBACK_FONT_12,
+    text = nil,
+    canvas = nil,
+    native = nil,
+  }
+  ALL_TEXT_TOKENS[#ALL_TEXT_TOKENS + 1] = token
+  TEXT_CHILDREN[parent] = TEXT_CHILDREN[parent] or {}
+  TEXT_CHILDREN[parent][#TEXT_CHILDREN[parent] + 1] = token
+  return token
+end
+
+local function lv_obj_create(parent)
+  local obj = raw_lv_obj_create(parent)
+  OBJECT_PARENT[obj] = parent
+  return obj
+end
+
+local function lv_obj_set_size(obj, width, height)
+  if not is_console_text(obj) then return raw_lv_obj_set_size(obj, width, height) end
+  obj.width, obj.height = math.max(1, math.floor(width or 1)), math.max(1, math.floor(height or 1))
+  if obj.native then return raw_lv_obj_set_size(obj.native, obj.width, obj.height) end
+end
+
+local function lv_obj_set_pos(obj, x, y)
+  if not is_console_text(obj) then return raw_lv_obj_set_pos(obj, x, y) end
+  obj.x, obj.y = math.floor(x or 0), math.floor(y or 0)
+  if obj.native then return raw_lv_obj_set_pos(obj.native, obj.x, obj.y) end
+  if obj.canvas then return raw_lv_obj_set_pos(obj.canvas, obj.x, obj.y) end
+end
+
+local function lv_obj_set_style_text_color(obj, color, part)
+  if not is_console_text(obj) then return raw_lv_obj_set_style_text_color(obj, color, part) end
+  obj.color = tonumber(color) or C.cream
+  if obj.native then return raw_lv_obj_set_style_text_color(obj.native, obj.color, part) end
+  if obj.text ~= nil then return render_console_text(obj) end
+end
+
+local function lv_obj_set_style_bg_color(obj, color, part)
+  local parent_background = OBJECT_BG[OBJECT_PARENT[obj]] or C.bg
+  OBJECT_BG[obj] = blend_color(color, parent_background, OBJECT_BG_OPA[obj] or 255)
+  local result = raw_lv_obj_set_style_bg_color(obj, color, part)
+  for _, token in ipairs(TEXT_CHILDREN[obj] or {}) do
+    token.background = OBJECT_BG[obj]
+    if token.text ~= nil and not token.native then render_console_text(token) end
+  end
+  return result
+end
+
+render_console_text = function(token)
+  if token.native then
+    raw_lv_label_set_text(token.native, tostring(token.text or ""))
+    return true
+  end
+  if not CONSOLE or not CONSOLE.ready then
+    fallback_text_token(token)
+    return false
+  end
+  token.background = OBJECT_BG[token.parent] or token.background or C.bg
+  if not token.canvas then
+    token.canvas = CONSOLE:create_canvas(token.parent, token.width, token.height)
+    if not token.canvas then
+      disable_console(CONSOLE.error ~= "" and CONSOLE.error or "console canvas create failed")
+      return false
+    end
+    raw_lv_obj_set_pos(token.canvas, token.x, token.y)
+    if lv_obj_set_style_bg_opa then pcall(lv_obj_set_style_bg_opa, token.canvas, 0, MAIN) end
+  end
+  local data, raster_error = CONSOLE:raster(token.text, token.width, token.height,
+    token.size, token.color, token.background, compositor_align(token.align))
+  if not data then
+    disable_console(raster_error)
+    return false
+  end
+  local ok, blit_error = CONSOLE:blit(token.canvas, data, token.width, token.height)
+  if not ok then
+    disable_console(blit_error)
+    return false
+  end
+  APP.font_error = ""
+  return true
+end
+
 local function set_bg(obj, color, opa, radius)
+  OBJECT_BG_OPA[obj] = opa or 255
   lv_obj_set_style_bg_color(obj, color, MAIN)
   lv_obj_set_style_bg_opa(obj, opa or 255, MAIN)
   lv_obj_set_style_border_width(obj, 0, MAIN)
@@ -291,14 +482,36 @@ local function set_bg(obj, color, opa, radius)
 end
 
 local function style_text(obj, color, font, align)
-  lv_obj_set_style_text_color(obj, color, MAIN)
-  lv_obj_set_style_text_font(obj, font, MAIN)
-  if lv_obj_set_style_text_opa then lv_obj_set_style_text_opa(obj, 255, MAIN) end
-  if lv_obj_set_style_text_align then lv_obj_set_style_text_align(obj, align or ALIGN_LEFT, MAIN) end
+  local font_role = type(font) == "table" and font or { size = 12, fallback = font }
+  if is_console_text(obj) then
+    obj.color = tonumber(color) or C.cream
+    obj.size = tonumber(font_role.size) or 12
+    obj.fallback_font = font_role.fallback or FALLBACK_FONT_12
+    obj.align = align or ALIGN_LEFT
+    if obj.native then
+      raw_lv_obj_set_style_text_color(obj.native, obj.color, MAIN)
+      raw_lv_obj_set_style_text_font(obj.native, obj.fallback_font, MAIN)
+      if raw_lv_obj_set_style_text_opa then raw_lv_obj_set_style_text_opa(obj.native, 255, MAIN) end
+      if raw_lv_obj_set_style_text_align then raw_lv_obj_set_style_text_align(obj.native, obj.align, MAIN) end
+    elseif obj.text ~= nil then
+      render_console_text(obj)
+    end
+    return
+  end
+  raw_lv_obj_set_style_text_color(obj, color, MAIN)
+  raw_lv_obj_set_style_text_font(obj, font_role.fallback or FALLBACK_FONT_12, MAIN)
+  if raw_lv_obj_set_style_text_opa then raw_lv_obj_set_style_text_opa(obj, 255, MAIN) end
+  if raw_lv_obj_set_style_text_align then raw_lv_obj_set_style_text_align(obj, align or ALIGN_LEFT, MAIN) end
 end
 
 local function set_text(obj, value)
-  if obj then lv_label_set_text(obj, tostring(value or "")) end
+  if not obj then return end
+  if is_console_text(obj) then
+    obj.text = tostring(value or "")
+    render_console_text(obj)
+  else
+    raw_lv_label_set_text(obj, tostring(value or ""))
+  end
 end
 
 local function set_hidden(obj, hidden)
@@ -313,6 +526,10 @@ end
 local root = lv_scr_act()
 lv_obj_clean(root)
 set_bg(root, C.bg, 255, 0)
+if CONSOLE and CONSOLE.ready then
+  local ok, validation_error = CONSOLE:validate(root)
+  if not ok then APP.font_error = tostring(validation_error or CONSOLE.error) end
+end
 
 APP.ui.status_page = lv_obj_create(root)
 lv_obj_set_size(APP.ui.status_page, W, H)
@@ -380,9 +597,9 @@ lv_obj_set_pos(APP.ui.state, 6, 1)
 style_text(APP.ui.state, C.bg, FONT_14, ALIGN_LEFT)
 
 APP.ui.state_arrow = lv_label_create(APP.ui.panel)
-lv_obj_set_size(APP.ui.state_arrow, 13, 19)
-lv_obj_set_pos(APP.ui.state_arrow, 99, 0)
-style_text(APP.ui.state_arrow, C.cream, FONT_16, ALIGN_LEFT)
+lv_obj_set_size(APP.ui.state_arrow, 10, 19)
+lv_obj_set_pos(APP.ui.state_arrow, 103, 0)
+style_text(APP.ui.state_arrow, C.cream, FONT_14, ALIGN_LEFT)
 set_text(APP.ui.state_arrow, ">")
 
 APP.ui.project = lv_label_create(APP.ui.panel)
@@ -497,9 +714,9 @@ style_text(APP.ui.weather_condition, C.bg, FONT_14, ALIGN_LEFT)
 set_text(APP.ui.weather_condition, "SYNCING")
 
 APP.ui.weather_condition_arrow = lv_label_create(APP.ui.weather_info_panel)
-lv_obj_set_size(APP.ui.weather_condition_arrow, 14, 20)
-lv_obj_set_pos(APP.ui.weather_condition_arrow, 102, 1)
-style_text(APP.ui.weather_condition_arrow, C.warn, FONT_16, ALIGN_LEFT)
+lv_obj_set_size(APP.ui.weather_condition_arrow, 10, 20)
+lv_obj_set_pos(APP.ui.weather_condition_arrow, 105, 1)
+style_text(APP.ui.weather_condition_arrow, C.warn, FONT_14, ALIGN_LEFT)
 set_text(APP.ui.weather_condition_arrow, ">")
 
 APP.ui.weather_source = lv_label_create(APP.ui.weather_info_panel)
@@ -1198,7 +1415,7 @@ end
 local function render_weather()
   local state = APP.weather and APP.weather.state or nil
   if not state then return end
-  local city = clip(state.city ~= "" and state.city or state.address or "WEATHER", 20)
+  local city = clip(weather_city_text(state), 20)
   set_text(APP.ui.weather_title, "WX // " .. string.upper(city))
 
   if not state.valid then
@@ -1567,6 +1784,14 @@ APP.web = HoloWeb.new({
       weather_sync = APP.weather_sync_text,
       activity = APP.remote.activity,
       session_meme = SESSION_MEMES[APP.session_meme_index] and SESSION_MEMES[APP.session_meme_index].label or "",
+      font = {
+        family = CONSOLE and CONSOLE.ready and CONSOLE.family or "Montserrat",
+        source = CONSOLE and CONSOLE.ready and CONSOLE.source or "firmware fallback",
+        rendering = CONSOLE and CONSOLE.ready and CONSOLE.rendering or "grayscale",
+        loaded = CONSOLE and CONSOLE.ready or false,
+        loaded_sizes = CONSOLE and CONSOLE.ready and 5 or 0,
+        error = APP.font_error,
+      },
     }
   end,
 })

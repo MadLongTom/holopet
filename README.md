@@ -21,6 +21,12 @@ sprite from clawdmoji project.
 - Codex state, project, tool category, and connection state appear below Clawd.
 - The lower panel uses a square-edged Powerline/Oh My Zsh prompt treatment.
   Its state and state-timer segments inherit the current Clawd state color.
+- All device UI labels use the bundled monospaced `Clawd Console` face, an
+  ASCII-subsetted Cascadia Mono derivative. A native application module
+  rasterizes 10, 12, 14, 16, and 28 px text with horizontal RGB subpixel
+  coverage, pre-composites it into RGB565, and sends the finished pixels to
+  small LVGL canvases. Missing/corrupt assets safely fall back to firmware
+  Montserrat instead of leaving blank labels.
 - Non-idle states show `Cmm:ss` for the current chat/turn and `Smm:ss` for the
   uninterrupted current state, followed by 5h usage, reset time, and week use.
 - A fresh IDLE screen labels those slots as `C CHAT / S STATE`; after a session
@@ -104,6 +110,29 @@ strategy and incrementally maps the active Codex JSONL session:
 
 The fallback reads record type metadata and state fields only; it does not send
 prompt, assistant, tool argument, or tool output contents to the device.
+
+## Console font compositor
+
+The device package includes one static ASCII TrueType font at
+`package/font/clawd_console.ttf`. It is generated from Microsoft's
+OFL-licensed Cascadia Mono and renamed `Clawd Console` as a derivative. The
+bundled `package/modules/aida_font.so` module performs the same application-side
+RGB565 rasterization already proven by AIDA Monitor. This avoids the firmware's
+broken `LV_FONT_SUBPX_HOR` paint path, which accepts an LCD font but produces
+invisible glyphs on this device. ClawdMoji GIFs are not filtered or antialiased.
+The module's standalone ESP-IDF source is versioned under `native/aida_font` so
+this repository remains the only build and deployment source.
+
+Rebuild the font asset with Python and `fonttools` from an installed Cascadia
+Mono TTF:
+
+```powershell
+python tools/build_console_font.py C:\Windows\Fonts\CascadiaMono.ttf
+```
+
+The management WebUI reports whether the compositor loaded and whether the
+screen is using `RGB subpixel / RGB565 compositor` or the grayscale firmware
+fallback.
 
 ## Usage limits
 
