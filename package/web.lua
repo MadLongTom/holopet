@@ -53,6 +53,13 @@ local function W(language, en, zh)
   return ui_is_zh(language) and zh or en
 end
 
+local function normalize_language_mode(value)
+  local text = tostring(value or ""):gsub("_", "-"):lower()
+  if text == "en" or text:match("^en%-") then return "en" end
+  if text == "zh" or text:match("^zh%-") then return "zh-CN" end
+  return "system"
+end
+
 local function settings_weather_address()
   local doc = decode_json(read_text(SETTINGS_PATH))
   return trim(doc.weather_address or doc.weatherAddress or doc.weather_city or doc.city or "")
@@ -104,6 +111,7 @@ local function config_text(config)
 config.host = %q
 config.port = %d
 config.path = %q
+config.language = %q
 
 config.timeout_ms = %d
 config.reconnect_ms = %d
@@ -116,6 +124,7 @@ return config
     tostring(config.host or "192.168.0.100"),
     tonumber(config.port) or 17321,
     normalize_path(config.path),
+    normalize_language_mode(config.language),
     tonumber(config.timeout_ms) or 7000,
     tonumber(config.reconnect_ms) or 2000,
     tonumber(config.stale_ms) or 120000,
@@ -160,6 +169,10 @@ local function build_html(api_prefix, language)
   local portLabel = zh and "端口" or "Port"
   local pathLabel = zh and "事件路径" or "Event path"
   local weatherLabel = zh and "天气城市" or "Weather city"
+  local languageLabel = zh and "显示语言" or "Display language"
+  local languageSystem = zh and "跟随系统" or "Follow system"
+  local languageChinese = zh and "中文" or "Chinese"
+  local languageEnglish = "English"
   local saveText = zh and "保存并重连" or "Save and reconnect"
   local testText = zh and "测试连接" or "Test connection"
   local loadingText = zh and "正在读取配置…" or "Loading settings..."
@@ -176,6 +189,7 @@ local function build_html(api_prefix, language)
   local savingText = zh and "正在保存…" or "Saving..."
   local saveFail = zh and "保存失败" or "Save failed"
   local savedText = zh and "已保存，正在按新地址重连。" or "Saved. Reconnecting with the new address."
+  local reloadingText = zh and "已保存，正在应用语言并重载应用…" or "Saved. Applying language and reloading the app..."
   local testingText = zh and "正在测试" or "Testing"
   local testOk = zh and "连接成功，Codex 桥接服务在线。" or "Connection OK. Codex bridge is online."
   local testFail = zh and "连接失败：" or "Connection failed: "
@@ -189,14 +203,14 @@ local function build_html(api_prefix, language)
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 72% 0,#2b1610 0,transparent 38%),var(--bg);color:var(--text);font:15px/1.55 "Cascadia Mono",Consolas,"Microsoft YaHei",monospace}
 .page{width:min(900px,calc(100% - 28px));margin:auto;padding:28px 0}.top{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:18px}h1{margin:0;font-size:30px}.sub{margin:5px 0 0;color:var(--muted)}
 .back,button{min-height:42px;border:1px solid var(--line);border-radius:8px;background:#21150f;color:var(--text);padding:0 15px;text-decoration:none;cursor:pointer}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:18px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(145deg,#1b120e,#110c09)}h2{margin:0 0 14px;font-size:18px}
-.form{display:grid;gap:13px}.row{display:grid;grid-template-columns:1fr 150px;gap:10px}label{display:block;margin-bottom:5px;color:var(--muted);font-size:13px;font-weight:700}input{width:100%;height:44px;border:1px solid var(--line);border-radius:8px;background:#090604;color:var(--text);padding:0 11px;outline:none}input:focus{border-color:var(--rust);box-shadow:0 0 0 3px #d9775730}.actions{display:flex;gap:9px;flex-wrap:wrap}.primary{border-color:transparent;background:var(--rust);color:#170b07;font-weight:800}.status{min-height:24px;color:var(--muted)}.ok{color:var(--mint)}.bad{color:var(--red)}
+  .form{display:grid;gap:13px}.row{display:grid;grid-template-columns:1fr 150px;gap:10px}label{display:block;margin-bottom:5px;color:var(--muted);font-size:13px;font-weight:700}input,select{width:100%;height:44px;border:1px solid var(--line);border-radius:8px;background:#090604;color:var(--text);padding:0 11px;outline:none}input:focus,select:focus{border-color:var(--rust);box-shadow:0 0 0 3px #d9775730}.actions{display:flex;gap:9px;flex-wrap:wrap}.primary{border-color:transparent;background:var(--rust);color:#170b07;font-weight:800}.status{min-height:24px;color:var(--muted)}.ok{color:var(--mint)}.bad{color:var(--red)}
 .state{display:grid;gap:11px}.metric{padding:11px;border:1px solid #3a261e;border-radius:8px;background:#0d0907}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;overflow-wrap:anywhere}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:7px}.dot.on{background:var(--mint)}code{color:#f4c1a7}@media(max-width:700px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr}.top{align-items:start}h1{font-size:25px}}
 </style></head><body><main class="page"><header class="top"><div><h1>]=] .. headline .. [=[</h1><p class="sub">]=] .. subtitle .. [=[</p></div><a class="back" href="/main">]=] .. back .. [=[</a></header>
-<section class="grid"><section class="panel"><h2>]=] .. hostTitle .. [=[</h2><form class="form" id="form"><div class="row"><div><label for="host">]=] .. hostLabel .. [=[</label><input id="host" inputmode="decimal" placeholder="192.168.0.100" required></div><div><label for="port">]=] .. portLabel .. [=[</label><input id="port" inputmode="numeric" placeholder="17321" required></div></div><div><label for="path">]=] .. pathLabel .. [=[</label><input id="path" placeholder="/events" required></div><div><label for="weather">]=] .. weatherLabel .. [=[</label><input id="weather" placeholder="Ningbo / Shanghai"></div><div class="actions"><button class="primary" type="submit">]=] .. saveText .. [=[</button><button id="test" type="button">]=] .. testText .. [=[</button></div><div class="status" id="message">]=] .. loadingText .. [=[</div></form></section>
+<section class="grid"><section class="panel"><h2>]=] .. hostTitle .. [=[</h2><form class="form" id="form"><div class="row"><div><label for="host">]=] .. hostLabel .. [=[</label><input id="host" inputmode="decimal" placeholder="192.168.0.100" required></div><div><label for="port">]=] .. portLabel .. [=[</label><input id="port" inputmode="numeric" placeholder="17321" required></div></div><div><label for="path">]=] .. pathLabel .. [=[</label><input id="path" placeholder="/events" required></div><div><label for="weather">]=] .. weatherLabel .. [=[</label><input id="weather" placeholder="Ningbo / Shanghai"></div><div><label for="language">]=] .. languageLabel .. [=[</label><select id="language"><option value="system">]=] .. languageSystem .. [=[</option><option value="zh-CN">]=] .. languageChinese .. [=[</option><option value="en">]=] .. languageEnglish .. [=[</option></select></div><div class="actions"><button class="primary" type="submit">]=] .. saveText .. [=[</button><button id="test" type="button">]=] .. testText .. [=[</button></div><div class="status" id="message">]=] .. loadingText .. [=[</div></form></section>
 <aside class="panel"><h2>]=] .. statusTitle .. [=[</h2><div class="state"><div class="metric"><span>]=] .. deviceHost .. [=[</span><strong><i class="dot" id="dot"></i><b id="online">]=] .. offlineText .. [=[</b></strong></div><div class="metric"><span>]=] .. eventStream .. [=[</span><strong><code id="url">-</code></strong></div><div class="metric"><span>]=] .. screenFont .. [=[</span><strong id="font">-</strong></div><div class="metric"><span>]=] .. recentInfo .. [=[</span><strong id="detail">-</strong></div></div></aside></section></main>
-<script>const API="]=] .. api_prefix .. [=[";const TXT={online:"]=] .. html_escape_js(onlineText) .. [=[",offline:"]=] .. html_escape_js(offlineText) .. [=[",wait:"]=] .. html_escape_js(waitText) .. [=[",loaded:"]=] .. html_escape_js(loadedText) .. [=[",readFail:"]=] .. html_escape_js(readFail) .. [=[",saving:"]=] .. html_escape_js(savingText) .. [=[",saveFail:"]=] .. html_escape_js(saveFail) .. [=[",saved:"]=] .. html_escape_js(savedText) .. [=[",testing:"]=] .. html_escape_js(testingText) .. [=[",testOk:"]=] .. html_escape_js(testOk) .. [=[",testFail:"]=] .. html_escape_js(testFail) .. [=[",timeout:"]=] .. html_escape_js(timeoutText) .. [=[",cfgFail:"]=] .. html_escape_js(cfgFail) .. [=["};const $=id=>document.getElementById(id);const fields=['host','port','path','weather'];let formDirty=false;fields.forEach(id=>$(id).addEventListener('input',()=>{formDirty=true}));function path(v){v=(v||"").trim();return !v?"/events":v[0]==="/"?v:"/"+v}function url(){return "http://"+$('host').value.trim()+":"+$('port').value.trim()+path($('path').value)}function msg(t,c){$('message').textContent=t;$('message').className="status "+(c||"")}function syncForm(d,force){if(formDirty&&!force)return;$('host').value=d.host||"";$('port').value=d.port||17321;$('path').value=d.path||"/events";$('weather').value=d.weather_address||(d.weather&&d.weather.address)||"";formDirty=false}function paint(d,sync,force){if(sync)syncForm(d,force);$('url').textContent=d.url||url();$('online').textContent=d.online?TXT.online:TXT.offline;$('dot').className="dot "+(d.online?"on":"");let f=d.font||{};$('font').textContent=(f.family||"-")+" · "+(f.rendering||"-");$('detail').textContent=f.error||d.detail||TXT.wait}
+<script>const API="]=] .. api_prefix .. [=[";const TXT={online:"]=] .. html_escape_js(onlineText) .. [=[",offline:"]=] .. html_escape_js(offlineText) .. [=[",wait:"]=] .. html_escape_js(waitText) .. [=[",loaded:"]=] .. html_escape_js(loadedText) .. [=[",readFail:"]=] .. html_escape_js(readFail) .. [=[",saving:"]=] .. html_escape_js(savingText) .. [=[",saveFail:"]=] .. html_escape_js(saveFail) .. [=[",saved:"]=] .. html_escape_js(savedText) .. [=[",reloading:"]=] .. html_escape_js(reloadingText) .. [=[",testing:"]=] .. html_escape_js(testingText) .. [=[",testOk:"]=] .. html_escape_js(testOk) .. [=[",testFail:"]=] .. html_escape_js(testFail) .. [=[",timeout:"]=] .. html_escape_js(timeoutText) .. [=[",cfgFail:"]=] .. html_escape_js(cfgFail) .. [=["};const $=id=>document.getElementById(id);const fields=['host','port','path','weather','language'];let formDirty=false;fields.forEach(id=>{const node=$(id);node.addEventListener('input',()=>{formDirty=true});node.addEventListener('change',()=>{formDirty=true})});function path(v){v=(v||"").trim();return !v?"/events":v[0]==="/"?v:"/"+v}function url(){return "http://"+$('host').value.trim()+":"+$('port').value.trim()+path($('path').value)}function msg(t,c){$('message').textContent=t;$('message').className="status "+(c||"")}function syncForm(d,force){if(formDirty&&!force)return;$('host').value=d.host||"";$('port').value=d.port||17321;$('path').value=d.path||"/events";$('weather').value=d.weather_address||(d.weather&&d.weather.address)||"";$('language').value=d.language_mode||"system";formDirty=false}function paint(d,sync,force){if(sync)syncForm(d,force);$('url').textContent=d.url||url();$('online').textContent=d.online?TXT.online:TXT.offline;$('dot').className="dot "+(d.online?"on":"");let f=d.font||{};$('font').textContent=(f.family||"-")+" · "+(f.rendering||"-");$('detail').textContent=f.error||d.detail||TXT.wait}
 async function load(){const r=await fetch(API+"/state?_="+Date.now(),{cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||TXT.readFail);paint(d,true,false);msg(TXT.loaded,"ok")}
-$('form').onsubmit=async e=>{e.preventDefault();msg(TXT.saving,"");try{const q=new URLSearchParams({host:$('host').value.trim(),port:$('port').value.trim(),path:path($('path').value),weather:$('weather').value.trim()});const r=await fetch(API+"/save?"+q,{cache:"no-store"});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||TXT.saveFail);paint(d,true,true);msg(TXT.saved,"ok")}catch(e){msg(e.message,"bad")}};
+$('form').onsubmit=async e=>{e.preventDefault();msg(TXT.saving,"");try{const q=new URLSearchParams({host:$('host').value.trim(),port:$('port').value.trim(),path:path($('path').value),weather:$('weather').value.trim(),language:$('language').value});const r=await fetch(API+"/save?"+q,{cache:"no-store"});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||TXT.saveFail);paint(d,true,true);msg(d.reload?TXT.reloading:TXT.saved,"ok");if(d.reload)setTimeout(()=>location.reload(),1800)}catch(e){msg(e.message,"bad")}};
 $('test').onclick=async()=>{msg(TXT.testing+" "+url()+" ...","");const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),3000);try{const base="http://"+$('host').value.trim()+":"+$('port').value.trim();const r=await fetch(base+"/health?_="+Date.now(),{cache:"no-store",signal:ctrl.signal});if(!r.ok)throw Error("HTTP "+r.status);msg(TXT.testOk,"ok")}catch(e){msg(TXT.testFail+(e.name==="AbortError"?TXT.timeout:e.message),"bad")}finally{clearTimeout(timer)}};load().catch(e=>msg(TXT.cfgFail+e.message,"bad"));setInterval(()=>fetch(API+"/state?_="+Date.now(),{cache:"no-store"}).then(r=>r.json()).then(d=>paint(d,false,false)).catch(()=>{}),2500);</script></body></html>]=]
 end
 
@@ -208,11 +222,13 @@ function Web.new(opts)
     route_base = opts.route_base or "/holo_pet",
     api_prefix = (opts.route_base or "/holo_pet") .. "/api",
     restart = opts.restart,
+    reload_app = opts.reload_app,
     refresh_weather = opts.refresh_weather,
     set_page = opts.set_page,
     connection_state = opts.connection_state,
     language = tostring(opts.language or "en"),
     requested_language = tostring(opts.requested_language or opts.language or "en"),
+    system_language = tostring(opts.system_language or opts.requested_language or opts.language or "en"),
     routes = {},
     started = false,
   }
@@ -224,6 +240,7 @@ function Web.new(opts)
     local path = normalize_path(self.config.path)
     return {
       ok = ok ~= false, host = host, port = port, path = path,
+      version = extra.version,
       url = "http://" .. host .. ":" .. tostring(port) .. path,
       weather_address = settings_weather_address(),
       online = extra.online == true, detail = extra.detail or message or "",
@@ -235,6 +252,8 @@ function Web.new(opts)
       usage = extra.usage,
       language = self.language,
       requested_language = self.requested_language,
+      system_language = self.system_language,
+      language_mode = normalize_language_mode(self.config.language),
       idle_variant = extra.idle_variant,
       idle_delay_minutes = extra.idle_delay_minutes,
       clock = extra.clock,
@@ -265,7 +284,11 @@ function Web.new(opts)
     local host, port, path = trim(q.host), tonumber(q.port), normalize_path(q.path)
     if not valid_ipv4(host) then return json_response("400 Bad Request", self:snapshot(false, W(self.language, "Please enter a valid IPv4 address", "请输入有效的 IPv4 地址"))) end
     if not port or port < 1 or port > 65535 then return json_response("400 Bad Request", self:snapshot(false, W(self.language, "Port must be between 1 and 65535", "端口需为 1 到 65535"))) end
+    local previous_language = normalize_language_mode(self.config.language)
+    local language_mode = q.language ~= nil and normalize_language_mode(q.language) or previous_language
+    local language_changed = language_mode ~= previous_language
     self.config.host, self.config.port, self.config.path = host, math.floor(port), path
+    self.config.language = language_mode
     local weather_address = trim(q.weather or q.weather_address or "")
     if weather_address ~= "" then
       local weather_ok, weather_err = save_weather_address(weather_address)
@@ -273,9 +296,15 @@ function Web.new(opts)
     end
     local ok, err = write_config(self.config_path, self.config)
     if not ok then return json_response("500 Internal Server Error", self:snapshot(false, W(self.language, "Failed to write config: ", "配置写入失败: ") .. tostring(err))) end
-    if self.restart then pcall(self.restart) end
-    if self.refresh_weather then pcall(self.refresh_weather) end
-    return json_response("200 OK", self:snapshot(true, "saved"))
+    local result = self:snapshot(true, "saved")
+    result.reload = language_changed
+    if language_changed then
+      if self.reload_app then pcall(self.reload_app) end
+    else
+      if self.restart then pcall(self.restart) end
+      if self.refresh_weather then pcall(self.refresh_weather) end
+    end
+    return json_response("200 OK", result)
   end
 
   function self:start()
@@ -310,5 +339,7 @@ function Web.new(opts)
 end
 
 Web.build_html = build_html
+Web.config_text = config_text
+Web.normalize_language_mode = normalize_language_mode
 
 return Web

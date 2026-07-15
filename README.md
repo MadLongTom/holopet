@@ -21,10 +21,12 @@ sprite from clawdmoji project.
 - Codex state, project, tool category, and connection state appear below Clawd.
 - The lower panel uses a square-edged Powerline/Oh My Zsh prompt treatment.
   Its state and state-timer segments inherit the current Clawd state color.
-- At startup the app normalizes `language`, `locale`, or `lang` from
-  `/sd/apps/settings.json`. English uses the bundled monospaced `Clawd Console`
-  face; Chinese uses the bundled `AIDA Noto Sans SC` face. The same fixed
-  language is passed to the screen, weather client, and WebUI.
+- By default the app normalizes `language`, `locale`, or `lang` from
+  `/sd/apps/settings.json`. Its WebUI can override that choice with Chinese or
+  English, or switch back to following the system. English uses the bundled
+  monospaced `Clawd Console` face; Chinese uses the bundled `AIDA Noto Sans SC`
+  face. The same fixed language is passed to the screen, weather client, and
+  WebUI, and changing it automatically reloads the app.
 - A native application module rasterizes 10, 12, 14, 16, and 28 px text with
   horizontal RGB subpixel coverage, pre-composites it into RGB565, and sends the
   finished pixels to small LVGL canvases. If Chinese rendering cannot start,

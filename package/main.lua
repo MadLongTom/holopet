@@ -59,7 +59,9 @@ rebase_asset_paths(ClawdPack)
 
 local APP_KEY = "HOLO_PET_APP"
 local SETTINGS_PATH = "/sd/apps/settings.json"
-local REQUESTED_UI_LANG = I18n.read(SETTINGS_PATH)
+local SYSTEM_UI_LANG = I18n.read(SETTINGS_PATH)
+local UI_LANGUAGE_MODE = I18n.normalize_mode(config.language)
+local REQUESTED_UI_LANG = I18n.resolve(UI_LANGUAGE_MODE, SYSTEM_UI_LANG)
 local UI_LANG = REQUESTED_UI_LANG
 local UI_ZH = I18n.is_zh(UI_LANG)
 local function T(en, zh)
@@ -73,12 +75,13 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.2.1",
+  VERSION = "1.3.0",
   running = true,
   timer = nil,
   client = nil,
   weather = nil,
   web = nil,
+  reload_timer = nil,
   connection_detail = "",
   routes = {},
   current_visual = nil,
@@ -206,6 +209,8 @@ if UI_ZH and (not CONSOLE or not CONSOLE.ready) then
 end
 APP.language = UI_LANG
 APP.requested_language = REQUESTED_UI_LANG
+APP.system_language = SYSTEM_UI_LANG
+APP.language_mode = UI_LANGUAGE_MODE
 TEMP_UNIT = T("C", "℃")
 APP.connection_detail = T("waiting for bridge", "等待桥接服务")
 
@@ -1786,6 +1791,11 @@ function APP.stop(reason)
     pcall(function() APP.timer:unregister() end)
     APP.timer = nil
   end
+  if APP.reload_timer then
+    pcall(function() APP.reload_timer:stop() end)
+    pcall(function() APP.reload_timer:unregister() end)
+    APP.reload_timer = nil
+  end
 
   clear_gif_slot("status")
   clear_gif_slot("weather")
@@ -1830,10 +1840,24 @@ bind_keys()
 APP.web = HoloWeb.new({
   language = UI_LANG,
   requested_language = REQUESTED_UI_LANG,
+  system_language = SYSTEM_UI_LANG,
   config = config,
   config_path = APP_DIR .. "/config.lua",
   route_base = (app and app.route_base and app.route_base()) or ("/" .. APP_SLUG),
   restart = start_client,
+  reload_app = function()
+    if not app or not app.launch or not tmr or not tmr.create then return false end
+    if APP.reload_timer then
+      pcall(function() APP.reload_timer:stop() end)
+      pcall(function() APP.reload_timer:unregister() end)
+    end
+    APP.reload_timer = tmr.create()
+    APP.reload_timer:alarm(600, tmr.ALARM_SINGLE, function()
+      APP.reload_timer = nil
+      pcall(function() app.launch(APP_ID or APP_SLUG) end)
+    end)
+    return true
+  end,
   refresh_weather = function()
     if APP.weather then
       APP.weather.resolved_for = ""
@@ -1846,6 +1870,7 @@ APP.web = HoloWeb.new({
   connection_state = function()
     local chat_text, state_text = timer_display_texts()
     return {
+      version = APP.VERSION,
       online = APP.remote.connected,
       detail = APP.connection_detail,
       state = APP.remote.state,

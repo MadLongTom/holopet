@@ -50,6 +50,19 @@ function I18n.is_zh(language)
   return I18n.normalize(language) == "zh-CN"
 end
 
+function I18n.normalize_mode(value)
+  local text = tostring(value or ""):gsub("_", "-"):lower()
+  if text == "en" or text:match("^en%-") then return "en" end
+  if text == "zh" or text:match("^zh%-") then return "zh-CN" end
+  return "system"
+end
+
+function I18n.resolve(mode, system_language)
+  local normalized = I18n.normalize_mode(mode)
+  if normalized == "system" then return I18n.normalize(system_language) end
+  return normalized
+end
+
 function I18n.pick(language, en, zh)
   return I18n.is_zh(language) and zh or en
 end

@@ -3,6 +3,7 @@ local config = {}
 config.host = "192.168.0.100"
 config.port = 17321
 config.path = "/events"
+config.language = "system"
 
 config.timeout_ms = 7000
 config.reconnect_ms = 2000
