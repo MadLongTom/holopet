@@ -73,7 +73,7 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.2.0",
+  VERSION = "1.2.1",
   running = true,
   timer = nil,
   client = nil,
