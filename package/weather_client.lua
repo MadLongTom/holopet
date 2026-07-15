@@ -67,13 +67,25 @@ local function weather_kind(code)
   return "cloudy"
 end
 
+local function ui_is_zh()
+  local raw = read_text(SETTINGS_PATH) or ""
+  local lang = raw:match('"language"%s*:%s*"([^"]+)"') or ""
+  return tostring(lang):lower():match("^zh") ~= nil
+end
+
 local function weather_label(kind)
-  local labels = {
+  local labels_en = {
     clear = "CLEAR", partly = "PARTLY", cloudy = "CLOUDY", overcast = "OVERCAST",
     drizzle = "DRIZZLE", rain = "RAIN", storm = "STORM", snow = "SNOW",
     fog = "FOG", wind = "WIND",
   }
-  return labels[kind] or "WEATHER"
+  local labels_zh = {
+    clear = "晴", partly = "多云", cloudy = "阴", overcast = "阴天",
+    drizzle = "小雨", rain = "雨", storm = "雷雨", snow = "雪",
+    fog = "雾", wind = "风",
+  }
+  local labels = ui_is_zh() and labels_zh or labels_en
+  return labels[kind] or (ui_is_zh() and "天气" or "WEATHER")
 end
 
 local function climate_mood(temp, humidity)
@@ -100,7 +112,7 @@ function WeatherClient.new(opts)
       valid = false,
       loading = false,
       stale = false,
-      city = "WEATHER",
+      city = ui_is_zh() and "天气" or "WEATHER",
       address = "",
       error = "",
       updated_at_ms = 0,
@@ -182,7 +194,7 @@ function WeatherClient:parse_forecast(doc)
   self.state.current = {
     time = tostring(current.time or ""),
     temp = number(current.temperature_2m, 0),
-    temp_text = tostring(rounded(current.temperature_2m)) .. "C",
+    temp_text = tostring(rounded(current.temperature_2m)) .. "℃",
     feels = number(current.apparent_temperature, current.temperature_2m),
     humidity = rounded(current.relative_humidity_2m),
     precipitation = number(current.precipitation, 0),
@@ -242,7 +254,7 @@ function WeatherClient:parse_forecast(doc)
     self.state.tomorrow = {}
   end
   self.state.rain_probability = rounded(max_pop)
-  self.state.rain_time = first_rain or "DRY"
+  self.state.rain_time = first_rain or (ui_is_zh() and "无雨" or "DRY")
   self.state.max_gust = max_gust
   self.state.valid = true
   self.state.loading = false
