@@ -44,51 +44,134 @@
         </div>
       </header>
 
-      <p class="intro">在 HoloCubic 上显示 Codex 实时工作状态、会话信息和未来 8 小时天气。</p>
+      <p class="intro" data-i18n="intro">在 HoloCubic 上显示 Codex 实时工作状态、会话信息和未来 8 小时天气。</p>
 
-      <h2>核心功能</h2>
+      <h2 data-i18n="featuresTitle">核心功能</h2>
       <div class="grid">
-        <div class="cell"><b>实时状态</b><span>10 类 Codex Hook 事件与独立 Clawd 动画</span></div>
-        <div class="cell"><b>天气仪表</b><span>逐小时降雨、温湿度、风向、风速与阵风</span></div>
-        <div class="cell"><b>三页显示</b><span>左右键切换状态、天气和会话页面</span></div>
-        <div class="cell"><b>控制台字体</b><span>Clawd Console 等宽字形与 RGB 次像素渲染</span></div>
-        <div class="cell"><b>设备管理</b><span>通过 <code>/holo_pet/</code> 配置桥接主机并测试连接</span></div>
+        <div class="cell"><b data-i18n="statusTitle">实时状态</b><span data-i18n="statusText">10 类 Codex Hook 事件与独立 Clawd 动画</span></div>
+        <div class="cell"><b data-i18n="weatherTitle">天气仪表</b><span data-i18n="weatherText">逐小时降雨、温湿度、风向、风速与阵风</span></div>
+        <div class="cell"><b data-i18n="pagesTitle">三页显示</b><span data-i18n="pagesText">左右键切换状态、天气和会话页面</span></div>
+        <div class="cell"><b data-i18n="fontTitle">双语字体</b><span data-i18n="fontText">中英文自动匹配字体，并使用 RGB 次像素渲染</span></div>
+        <div class="cell"><b data-i18n="manageTitle">设备管理</b><span data-i18n-html="manageText">通过 <code>/holo_pet/</code> 配置桥接主机并测试连接</span></div>
       </div>
 
-      <h2>界面预览</h2>
+      <h2 data-i18n="previewTitle">界面预览</h2>
       <div class="screens">
         <figure>
           <img class="screen" width="320" height="268" alt="Clawd Monitor 状态页面" src="data:image/png;base64,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">
-          <figcaption>状态</figcaption>
+          <figcaption data-i18n="statusCaption">状态</figcaption>
         </figure>
         <figure>
           <img class="screen" width="320" height="268" alt="Clawd Monitor 天气页面" src="data:image/png;base64,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">
-          <figcaption>天气</figcaption>
+          <figcaption data-i18n="weatherCaption">天气</figcaption>
         </figure>
         <figure>
           <img class="screen" width="320" height="268" alt="Clawd Monitor 会话页面" src="data:image/png;base64,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">
-          <figcaption>会话</figcaption>
+          <figcaption data-i18n="sessionCaption">会话</figcaption>
         </figure>
       </div>
 
-      <h2>部署</h2>
+      <h2 data-i18n="deployTitle">部署</h2>
       <ol class="steps">
-        <li>将 <code>package/</code> 内全部文件复制到 <code>/sd/apps/holo_pet/</code> 或商店分配的 <code>/sd/apps/holopet/</code>，然后重扫 app。</li>
-        <li>在 Codex 电脑运行 <code>node bridge/install-codex-hook.js</code>。</li>
-        <li>在管理页填写电脑局域网 IP；默认端口 <code>17321</code>，路径 <code>/events</code>。</li>
+        <li data-i18n-html="deployOne">将 <code>package/</code> 内全部文件复制到 <code>/sd/apps/holo_pet/</code> 或商店分配的 <code>/sd/apps/holopet/</code>，然后重扫 app。</li>
+        <li data-i18n-html="deployTwo">在 Codex 电脑运行 <code>node bridge/install-codex-hook.js</code>。</li>
+        <li data-i18n-html="deployThree">在管理页填写电脑局域网 IP；默认端口 <code>17321</code>，路径 <code>/events</code>。</li>
       </ol>
 
-      <h2>应用信息</h2>
+      <h2 data-i18n="appInfoTitle">应用信息</h2>
       <div class="meta">
-        <div class="cell"><b>安装包大小</b><span>约 2.06 MiB</span></div>
-        <div class="cell"><b>版本号</b><span>1.1.0</span></div>
+        <div class="cell"><b data-i18n="sizeLabel">安装包大小</b><span data-i18n="sizeValue">约 4.41 MiB</span></div>
+        <div class="cell"><b data-i18n="versionLabel">版本号</b><span>1.2.0</span></div>
       </div>
     </section>
 
     <footer>
-      <p>开源协议：MIT · Git 地址：<a href="https://github.com/MadLongTom/holopet">github.com/MadLongTom/holopet</a></p>
-      <p>Clawd 角色及 Anthropic 标识的相关权利归 Anthropic, PBC；本项目为非官方项目。</p>
+      <p><span data-i18n="licenseRepo">开源协议：MIT · Git 地址：</span><a href="https://github.com/MadLongTom/holopet">github.com/MadLongTom/holopet</a></p>
+      <p data-i18n="rights">Clawd 角色及 Anthropic 标识的相关权利归 Anthropic, PBC；本项目为非官方项目。</p>
     </footer>
   </main>
+  <script>
+    (function () {
+      var messages = {
+        zh: {
+          title: "Clawd Monitor", iconAlt: "Clawd Monitor 应用图标", screenAlts: ["Clawd Monitor 状态页面", "Clawd Monitor 天气页面", "Clawd Monitor 会话页面"],
+          intro: "在 HoloCubic 上显示 Codex 实时工作状态、会话信息和未来 8 小时天气。",
+          featuresTitle: "核心功能", statusTitle: "实时状态", statusText: "10 类 Codex Hook 事件与独立 Clawd 动画",
+          weatherTitle: "天气仪表", weatherText: "逐小时降雨、温湿度、风向、风速与阵风",
+          pagesTitle: "三页显示", pagesText: "左右键切换状态、天气和会话页面",
+          fontTitle: "双语字体", fontText: "中英文自动匹配字体，并使用 RGB 次像素渲染",
+          manageTitle: "设备管理", manageText: "通过 <code>/holo_pet/</code> 配置桥接主机并测试连接",
+          previewTitle: "界面预览", statusCaption: "状态", weatherCaption: "天气", sessionCaption: "会话",
+          deployTitle: "部署",
+          deployOne: "将 <code>package/</code> 内全部文件复制到 <code>/sd/apps/holo_pet/</code> 或商店分配的 <code>/sd/apps/holopet/</code>，然后重扫 app。",
+          deployTwo: "在 Codex 电脑运行 <code>node bridge/install-codex-hook.js</code>。",
+          deployThree: "在管理页填写电脑局域网 IP；默认端口 <code>17321</code>，路径 <code>/events</code>。",
+          appInfoTitle: "应用信息", sizeLabel: "安装包大小", sizeValue: "约 4.41 MiB", versionLabel: "版本号",
+          licenseRepo: "开源协议：MIT · Git 地址：", rights: "Clawd 角色及 Anthropic 标识的相关权利归 Anthropic, PBC；本项目为非官方项目。"
+        },
+        en: {
+          title: "Clawd Monitor", iconAlt: "Clawd Monitor app icon", screenAlts: ["Clawd Monitor status page", "Clawd Monitor weather page", "Clawd Monitor session page"],
+          intro: "Show live Codex activity, session details, and the next 8 hours of weather on HoloCubic.",
+          featuresTitle: "Core features", statusTitle: "Live status", statusText: "10 Codex Hook event groups with dedicated Clawd animations",
+          weatherTitle: "Weather dashboard", weatherText: "Hourly rain, temperature, humidity, wind direction, speed, and gusts",
+          pagesTitle: "Three pages", pagesText: "Switch between status, weather, and session pages with the side controls",
+          fontTitle: "Bilingual fonts", fontText: "Automatically selects an English or Chinese font with RGB subpixel rendering",
+          manageTitle: "Device management", manageText: "Configure and test the bridge host at <code>/holo_pet/</code>",
+          previewTitle: "Interface preview", statusCaption: "Status", weatherCaption: "Weather", sessionCaption: "Session",
+          deployTitle: "Deployment",
+          deployOne: "Copy every file under <code>package/</code> to <code>/sd/apps/holo_pet/</code> or the store-assigned <code>/sd/apps/holopet/</code>, then rescan apps.",
+          deployTwo: "Run <code>node bridge/install-codex-hook.js</code> on the computer running Codex.",
+          deployThree: "Enter the computer's LAN IP in the management page. The default port is <code>17321</code> and the path is <code>/events</code>.",
+          appInfoTitle: "App information", sizeLabel: "Package size", sizeValue: "About 4.41 MiB", versionLabel: "Version",
+          licenseRepo: "License: MIT · Repository: ", rights: "Clawd and Anthropic marks belong to Anthropic, PBC. This is an unofficial project."
+        }
+      };
+
+      function normalize(value) {
+        return /^en(?:[-_]|$)/i.test(String(value || "")) ? "en" : "zh";
+      }
+
+      function applyLanguage(language) {
+        var lang = normalize(language);
+        var copy = messages[lang];
+        document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+        document.title = copy.title;
+        document.querySelectorAll("[data-i18n]").forEach(function (node) {
+          var value = copy[node.getAttribute("data-i18n")];
+          if (value) node.textContent = value;
+        });
+        document.querySelectorAll("[data-i18n-html]").forEach(function (node) {
+          var value = copy[node.getAttribute("data-i18n-html")];
+          if (value) node.innerHTML = value;
+        });
+        var icon = document.querySelector(".icon");
+        if (icon) icon.alt = copy.iconAlt;
+        document.querySelectorAll(".screen").forEach(function (image, index) {
+          image.alt = copy.screenAlts[index] || "Clawd Monitor";
+        });
+      }
+
+      async function detectLanguage() {
+        var candidates = ["/apps/settings.json"];
+        var parts = location.pathname.split("/").filter(Boolean);
+        var appIndex = parts.indexOf("apps");
+        var slug = appIndex >= 0 ? parts[appIndex + 1] : parts[0];
+        if (slug && slug !== "apps") candidates.push("/" + slug + "/api/state");
+        candidates.push("/holo_pet/api/state", "/holopet/api/state");
+        for (var i = 0; i < candidates.length; i += 1) {
+          try {
+            var response = await fetch(candidates[i], { cache: "no-store" });
+            if (!response.ok) continue;
+            var doc = await response.json();
+            var value = doc.requested_language || doc.language || doc.locale || doc.lang;
+            if (value) return value;
+          } catch (error) {}
+        }
+        return navigator.language || "zh-CN";
+      }
+
+      detectLanguage().then(applyLanguage, function () { applyLanguage("zh-CN"); });
+    }());
+  </script>
 </body>
 </html>

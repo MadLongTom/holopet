@@ -45,14 +45,12 @@ local function write_json(path, value)
   return false, tostring(result)
 end
 
-local function ui_is_zh()
-  local doc = decode_json(read_text(SETTINGS_PATH))
-  local lang = tostring(doc.language or ""):lower()
-  return lang:match("^zh") ~= nil
+local function ui_is_zh(language)
+  return tostring(language or ""):lower():match("^zh") ~= nil
 end
 
-local function W(en, zh)
-  return ui_is_zh() and zh or en
+local function W(language, en, zh)
+  return ui_is_zh(language) and zh or en
 end
 
 local function settings_weather_address()
@@ -150,9 +148,9 @@ local function html_escape_js(value)
   return value
 end
 
-local function build_html(api_prefix)
+local function build_html(api_prefix, language)
   api_prefix = html_escape_js(api_prefix)
-  local zh = ui_is_zh()
+  local zh = ui_is_zh(language)
   local title = zh and "Clawd Monitor 设置" or "Clawd Monitor Settings"
   local headline = zh and "Codex // 监控" or "Codex // Monitor"
   local subtitle = zh and "配置设备连接 Codex 桥接服务与天气城市。" or "Configure the Codex bridge and weather city for the device."
@@ -161,7 +159,7 @@ local function build_html(api_prefix)
   local hostLabel = zh and "主机 IP" or "Host IP"
   local portLabel = zh and "端口" or "Port"
   local pathLabel = zh and "事件路径" or "Event path"
-  local weatherLabel = zh and "天气城市（英文更稳定）" or "Weather city (English is more reliable)"
+  local weatherLabel = zh and "天气城市" or "Weather city"
   local saveText = zh and "保存并重连" or "Save and reconnect"
   local testText = zh and "测试连接" or "Test connection"
   local loadingText = zh and "正在读取配置…" or "Loading settings..."
@@ -213,6 +211,8 @@ function Web.new(opts)
     refresh_weather = opts.refresh_weather,
     set_page = opts.set_page,
     connection_state = opts.connection_state,
+    language = tostring(opts.language or "en"),
+    requested_language = tostring(opts.requested_language or opts.language or "en"),
     routes = {},
     started = false,
   }
@@ -233,6 +233,8 @@ function Web.new(opts)
       effort = extra.effort or "",
       context = extra.context,
       usage = extra.usage,
+      language = self.language,
+      requested_language = self.requested_language,
       idle_variant = extra.idle_variant,
       idle_delay_minutes = extra.idle_delay_minutes,
       clock = extra.clock,
@@ -261,16 +263,16 @@ function Web.new(opts)
   function self:save(req)
     local q = parse_query(req and req.query or "")
     local host, port, path = trim(q.host), tonumber(q.port), normalize_path(q.path)
-    if not valid_ipv4(host) then return json_response("400 Bad Request", self:snapshot(false, W("Please enter a valid IPv4 address", "请输入有效的 IPv4 地址"))) end
-    if not port or port < 1 or port > 65535 then return json_response("400 Bad Request", self:snapshot(false, W("Port must be between 1 and 65535", "端口需为 1 到 65535"))) end
+    if not valid_ipv4(host) then return json_response("400 Bad Request", self:snapshot(false, W(self.language, "Please enter a valid IPv4 address", "请输入有效的 IPv4 地址"))) end
+    if not port or port < 1 or port > 65535 then return json_response("400 Bad Request", self:snapshot(false, W(self.language, "Port must be between 1 and 65535", "端口需为 1 到 65535"))) end
     self.config.host, self.config.port, self.config.path = host, math.floor(port), path
     local weather_address = trim(q.weather or q.weather_address or "")
     if weather_address ~= "" then
       local weather_ok, weather_err = save_weather_address(weather_address)
-      if not weather_ok then return json_response("500 Internal Server Error", self:snapshot(false, W("Failed to save weather city: ", "天气地址保存失败: ") .. tostring(weather_err))) end
+      if not weather_ok then return json_response("500 Internal Server Error", self:snapshot(false, W(self.language, "Failed to save weather city: ", "天气地址保存失败: ") .. tostring(weather_err))) end
     end
     local ok, err = write_config(self.config_path, self.config)
-    if not ok then return json_response("500 Internal Server Error", self:snapshot(false, W("Failed to write config: ", "配置写入失败: ") .. tostring(err))) end
+    if not ok then return json_response("500 Internal Server Error", self:snapshot(false, W(self.language, "Failed to write config: ", "配置写入失败: ") .. tostring(err))) end
     if self.restart then pcall(self.restart) end
     if self.refresh_weather then pcall(self.refresh_weather) end
     return json_response("200 OK", self:snapshot(true, "saved"))
@@ -279,8 +281,8 @@ function Web.new(opts)
   function self:start()
     if self.started or not httpd or not httpd.start then return end
     pcall(function() httpd.start({ webroot = "/sd", auto_index = httpd.INDEX_NONE, max_handlers = 36 }) end)
-    self:register(httpd.GET, self.route_base, function() return response("200 OK", "text/html; charset=utf-8", build_html(self.api_prefix)) end)
-    self:register(httpd.GET, self.route_base .. "/", function() return response("200 OK", "text/html; charset=utf-8", build_html(self.api_prefix)) end)
+    self:register(httpd.GET, self.route_base, function() return response("200 OK", "text/html; charset=utf-8", build_html(self.api_prefix, self.language)) end)
+    self:register(httpd.GET, self.route_base .. "/", function() return response("200 OK", "text/html; charset=utf-8", build_html(self.api_prefix, self.language)) end)
     self:register(httpd.GET, self.api_prefix .. "/state", function() return json_response("200 OK", self:snapshot(true, "loaded")) end)
     self:register(httpd.GET, self.api_prefix .. "/page", function(req)
       local q = parse_query(req and req.query or "")
@@ -306,5 +308,7 @@ function Web.new(opts)
 
   return self
 end
+
+Web.build_html = build_html
 
 return Web

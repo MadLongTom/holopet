@@ -26,15 +26,21 @@ local APP_SLUG = APP_ID
   or "holo_pet"
 
 local config = dofile(APP_DIR .. "/config.lua")
+local I18n = dofile(APP_DIR .. "/i18n.lua")
 local CodexClient = dofile(APP_DIR .. "/codex_client.lua")
 local HoloWeb = dofile(APP_DIR .. "/web.lua")
 local WeatherClient = dofile(APP_DIR .. "/weather_client.lua")
 local Timezone = dofile(APP_DIR .. "/timezone.lua")
 local ClawdPack = dofile(APP_DIR .. "/assets/clawdmoji/manifest.lua")
 local ConsoleText = nil
+local console_loader_error = ""
 do
   local ok, module_or_error = pcall(dofile, APP_DIR .. "/console_text.lua")
-  if ok and type(module_or_error) == "table" then ConsoleText = module_or_error end
+  if ok and type(module_or_error) == "table" then
+    ConsoleText = module_or_error
+  else
+    console_loader_error = "console renderer load failed: " .. tostring(module_or_error)
+  end
 end
 
 local function rebase_asset_paths(value)
@@ -52,6 +58,14 @@ end
 rebase_asset_paths(ClawdPack)
 
 local APP_KEY = "HOLO_PET_APP"
+local SETTINGS_PATH = "/sd/apps/settings.json"
+local REQUESTED_UI_LANG = I18n.read(SETTINGS_PATH)
+local UI_LANG = REQUESTED_UI_LANG
+local UI_ZH = I18n.is_zh(UI_LANG)
+local function T(en, zh)
+  return UI_ZH and zh or en
+end
+local TEMP_UNIT = nil
 
 local previous = rawget(_G, APP_KEY)
 if previous and previous.stop then
@@ -59,13 +73,13 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.1.0",
+  VERSION = "1.2.0",
   running = true,
   timer = nil,
   client = nil,
   weather = nil,
   web = nil,
-  connection_detail = "waiting for bridge",
+  connection_detail = "",
   routes = {},
   current_visual = nil,
   status_visual_loaded = nil,
@@ -156,27 +170,44 @@ local C = {
   -- True RGB565 black removes the warm cast from the backlit LCD background.
   bg = 0x000000,
   panel = 0x120D0A,
-  line = 0x8A5C49,
-  rust = 0xFFC19F,
-  peach = 0xFFE7D6,
-  cream = 0xFFFFFF,
-  dim = 0xF3DACD,
-  mint = 0xD6FFF4,
-  warn = 0xFFF0A8,
+  line = 0x553427,
+  rust = 0xD97757,
+  peach = 0xF4C1A7,
+  cream = 0xFFF3E8,
+  dim = 0x9A7564,
+  mint = 0x8FE0C7,
+  warn = 0xFFD166,
   error = 0xFF6B6B,
 }
 
--- Chinese UI uses the same TrueType software compositor approach as AIDA
--- Monitor PR #6: a small native module rasterizes TTF glyphs into RGB565
--- canvas buffers. If the compositor is unavailable, labels fall back to the
--- built-in LVGL fonts.
-local CONSOLE = ConsoleText and ConsoleText.open and ConsoleText.open({
+-- Select the packaged typeface from the normalized system language. The
+-- compositor produces the same RGB565 canvases for both profiles.
+local FONT_PROFILE = UI_ZH and {
   family = "AIDA Noto Sans SC",
+  path = APP_DIR .. "/font/aida_noto_sans_sc.ttf",
+} or {
+  family = "Clawd Console",
+  path = APP_DIR .. "/font/clawd_console.ttf",
+}
+local CONSOLE = ConsoleText and ConsoleText.open and ConsoleText.open({
+  family = FONT_PROFILE.family,
   module_path = APP_DIR .. "/modules/aida_font.so",
-  font_path = APP_DIR .. "/font/aida_noto_sans_sc.ttf",
+  font_path = FONT_PROFILE.path,
 }) or nil
 APP.console_renderer = CONSOLE
-APP.font_error = ""
+APP.font_error = CONSOLE and tostring(CONSOLE.error or "") or console_loader_error
+
+-- A firmware font cannot display Chinese. If the packaged Chinese renderer is
+-- unavailable, keep the UI readable by using the English strings and expose
+-- the real error through the WebUI status endpoint.
+if UI_ZH and (not CONSOLE or not CONSOLE.ready) then
+  UI_LANG = "en"
+  UI_ZH = false
+end
+APP.language = UI_LANG
+APP.requested_language = REQUESTED_UI_LANG
+TEMP_UNIT = T("C", "℃")
+APP.connection_detail = T("waiting for bridge", "等待桥接服务")
 
 local IDLE_VISUALS = ClawdPack.events.Idle or {}
 
@@ -186,30 +217,10 @@ local SESSION_MEME_MIN_MS = 60 * 1000
 local SESSION_MEME_MAX_MS = 150 * 1000
 local PAGE_SWITCH_COOLDOWN_MS = 1000
 local WEATHER_FALLBACK_REFRESH_MS = 15 * 60 * 1000
-local SETTINGS_PATH = "/sd/apps/settings.json"
 local DEFAULT_TIMEZONE = "CST-8"
 local LOCAL_TIMEZONE = Timezone.read_settings(SETTINGS_PATH, DEFAULT_TIMEZONE)
 local NTP_SERVER = "ntp.aliyun.com"
 local NTP_RETRY_MS = 30 * 1000
-
-local function ui_language()
-  local raw = nil
-  if file and file.getcontents then
-    local ok, value = pcall(file.getcontents, SETTINGS_PATH)
-    if ok and type(value) == "string" then raw = value end
-  end
-  if not raw or raw == "" then return "en" end
-  local lang = raw:match('"language"%s*:%s*"([^"]+)"') or ""
-  lang = tostring(lang):lower()
-  if lang == "" then return "en" end
-  return lang
-end
-
-local UI_LANG = ui_language()
-local UI_ZH = UI_LANG:match("^zh") ~= nil
-local function T(en, zh)
-  return UI_ZH and zh or en
-end
 
 local STATE_LABELS = {
   idle = T("IDLE", "待命"),
@@ -258,6 +269,35 @@ local SESSION_MEMES = {
   { path = MEME_DIR .. "stonks.gif", label = T("STONKS", "一路上涨") },
   { path = MEME_DIR .. "panic.gif", label = T("PANIC BUTTON", "紧急按钮") },
 }
+
+local function refresh_language_tables()
+  local states = {
+    idle = T("IDLE", "待命"), thinking = T("THINKING", "思考"),
+    working = T("WORKING", "工作"), building = T("SUBAGENT", "子任务"),
+    notification = T("APPROVAL", "待确认"), done = T("DONE", "完成"),
+    error = T("ERROR", "错误"), sleeping = T("SLEEPING", "休眠"),
+  }
+  for key, value in pairs(states) do STATE_LABELS[key] = value end
+
+  local events = {
+    SessionStart = T("WAKE", "唤醒"), UserPromptSubmit = T("LISTEN", "接收"),
+    PreToolUse = T("RUN", "执行"), PermissionRequest = T("APPROVAL", "确认"),
+    PostToolUse = T("CHECK", "检查"), AgentResume = T("THINKING", "思考"),
+    PreCompact = T("PACKING", "整理"), PostCompact = T("COMPACT", "压缩"),
+    SubagentStart = T("DELEGATE", "分派"), SubagentStop = T("MERGED", "合并"),
+    Stop = T("DONE", "完成"),
+  }
+  for key, value in pairs(events) do EVENT_LABELS[key] = value end
+
+  local meme_labels = {
+    T("DEAL WITH IT", "稳住能赢"), T("THIS IS FINE", "问题不大"),
+    T("NOT ME", "不是我干的"), T("SHIP FIESTA", "发布派对"),
+    T("SURFING IT", "浪里调试"), T("KEYBOARD SMASH", "键盘风暴"),
+    T("POPCORN MODE", "吃瓜模式"), T("BONK", "敲一下"),
+    T("STONKS", "一路上涨"), T("PANIC BUTTON", "紧急按钮"),
+  }
+  for index, value in ipairs(meme_labels) do SESSION_MEMES[index].label = value end
+end
 
 local ALLOWED_STATES = {
   idle = true, thinking = true, working = true, building = true,
@@ -321,11 +361,7 @@ local function random_visual_index(group, count)
   return index
 end
 
-local function clip(value, max_len)
-  local text = tostring(value or "")
-  if #text <= max_len then return text end
-  return text:sub(1, math.max(0, max_len - 3)) .. "..."
-end
+local clip = I18n.clip
 
 local function compositor_align(value)
   if value == ALIGN_RIGHT then return 2 end
@@ -336,7 +372,7 @@ end
 local function weather_city_text(state)
   for _, value in ipairs({ state and state.city, state and state.address }) do
     local text = tostring(value or "")
-    if text ~= "" and not text:find("[\128-\255]") then return text end
+    if text ~= "" and (UI_ZH or not text:find("[\128-\255]")) then return text end
   end
   return T("WEATHER", "天气")
 end
@@ -550,7 +586,15 @@ lv_obj_clean(root)
 set_bg(root, C.bg, 255, 0)
 if CONSOLE and CONSOLE.ready then
   local ok, validation_error = CONSOLE:validate(root)
-  if not ok then APP.font_error = tostring(validation_error or CONSOLE.error) end
+  if not ok then
+    disable_console(validation_error or CONSOLE.error)
+    if UI_ZH then
+      UI_LANG, UI_ZH, TEMP_UNIT = "en", false, "C"
+      APP.language = UI_LANG
+      APP.connection_detail = T("waiting for bridge", "等待桥接服务")
+      refresh_language_tables()
+    end
+  end
 end
 
 APP.ui.status_page = lv_obj_create(root)
@@ -751,13 +795,13 @@ APP.ui.weather_temp = lv_label_create(APP.ui.weather_info_panel)
 lv_obj_set_size(APP.ui.weather_temp, 76, 38)
 lv_obj_set_pos(APP.ui.weather_temp, 7, 28)
 style_text(APP.ui.weather_temp, C.cream, FONT_28, ALIGN_LEFT)
-set_text(APP.ui.weather_temp, "--℃")
+set_text(APP.ui.weather_temp, "--" .. TEMP_UNIT)
 
 APP.ui.weather_feels = lv_label_create(APP.ui.weather_info_panel)
 lv_obj_set_size(APP.ui.weather_feels, 76, 15)
 lv_obj_set_pos(APP.ui.weather_feels, 7, 68)
 style_text(APP.ui.weather_feels, C.dim, FONT_10, ALIGN_LEFT)
-set_text(APP.ui.weather_feels, T("FEELS --℃", "体感 --℃"))
+set_text(APP.ui.weather_feels, T("FEELS ", "体感 ") .. "--" .. TEMP_UNIT)
 
 APP.ui.weather_hum_segment = lv_obj_create(APP.ui.weather_info_panel)
 lv_obj_set_size(APP.ui.weather_hum_segment, 76, 26)
@@ -830,7 +874,7 @@ APP.ui.weather_chart_temp = lv_label_create(APP.ui.weather_chart_panel)
 lv_obj_set_size(APP.ui.weather_chart_temp, 98, 12)
 lv_obj_set_pos(APP.ui.weather_chart_temp, 79, 0)
 style_text(APP.ui.weather_chart_temp, C.peach, FONT_10, ALIGN_RIGHT)
-set_text(APP.ui.weather_chart_temp, T("T -- > --℃", "温 -- > --℃"))
+set_text(APP.ui.weather_chart_temp, T("T ", "温 ") .. "-- > --" .. TEMP_UNIT)
 
 if lv_canvas_create then
   if CANVAS_FMT then
@@ -880,7 +924,7 @@ APP.ui.weather_tomorrow_temp = lv_label_create(APP.ui.weather_tomorrow_panel)
 lv_obj_set_size(APP.ui.weather_tomorrow_temp, 110, 13)
 lv_obj_set_pos(APP.ui.weather_tomorrow_temp, 4, 19)
 style_text(APP.ui.weather_tomorrow_temp, C.cream, FONT_10, ALIGN_LEFT)
-set_text(APP.ui.weather_tomorrow_temp, T("T -- > --℃", "温 -- > --℃"))
+set_text(APP.ui.weather_tomorrow_temp, T("T ", "温 ") .. "-- > --" .. TEMP_UNIT)
 
 APP.ui.weather_tomorrow_rain = lv_label_create(APP.ui.weather_tomorrow_panel)
 lv_obj_set_size(APP.ui.weather_tomorrow_rain, 110, 13)
@@ -1384,7 +1428,8 @@ local function render_weather_trend(state)
     rain_sum = rain_sum + rain
   end
   set_text(APP.ui.weather_chart_rain, T("R ", "雨 ") .. string.format("%.1f", rain_sum) .. "mm")
-  set_text(APP.ui.weather_chart_temp, min_temp and (T("T ", "温 ") .. tostring(min_temp) .. " > " .. tostring(max_temp) .. "℃") or T("T -- > --℃", "温 -- > --℃"))
+  set_text(APP.ui.weather_chart_temp, min_temp and (T("T ", "温 ") .. tostring(min_temp) .. " > " .. tostring(max_temp) .. TEMP_UNIT)
+    or (T("T ", "温 ") .. "-- > --" .. TEMP_UNIT))
 
   for i = 1, 4 do
     local row = rows[1 + (i - 1) * 2]
@@ -1423,13 +1468,13 @@ local function render_weather_trend(state)
     lv_obj_set_style_border_color(APP.ui.weather_tomorrow_panel, accent, MAIN)
     lv_obj_set_style_text_color(APP.ui.weather_tomorrow_kind, accent, MAIN)
     set_text(APP.ui.weather_tomorrow_kind, tomorrow.label or string.upper(tomorrow.kind))
-    set_text(APP.ui.weather_tomorrow_temp, T("T ", "温 ") .. tostring(tomorrow.temp_min or 0) .. " > " .. tostring(tomorrow.temp_max or 0) .. "℃")
+    set_text(APP.ui.weather_tomorrow_temp, T("T ", "温 ") .. tostring(tomorrow.temp_min or 0) .. " > " .. tostring(tomorrow.temp_max or 0) .. TEMP_UNIT)
     set_text(APP.ui.weather_tomorrow_rain, T("R", "雨") .. tostring(tomorrow.pop or 0) .. "% "
       .. string.format("%.1f", tonumber(tomorrow.precipitation) or 0) .. T("mm G", "mm 风")
       .. tostring(math.floor((tonumber(tomorrow.gust) or 0) + 0.5)))
   else
     set_text(APP.ui.weather_tomorrow_kind, T("SYNC", "同步"))
-    set_text(APP.ui.weather_tomorrow_temp, T("T -- > --℃", "温 -- > --℃"))
+    set_text(APP.ui.weather_tomorrow_temp, T("T ", "温 ") .. "-- > --" .. TEMP_UNIT)
     set_text(APP.ui.weather_tomorrow_rain, T("R--% 0.0mm G--", "雨--% 0.0mm 风--"))
   end
 end
@@ -1443,7 +1488,7 @@ local function render_weather()
   if not state.valid then
     set_text(APP.ui.weather_condition, state.loading and T("SYNCING", "同步中") or T("OFFLINE", "离线"))
     set_text(APP.ui.weather_source, state.loading and T("POLL", "请求") or T("DOWN", "断开"))
-    set_text(APP.ui.weather_temp, "--℃")
+    set_text(APP.ui.weather_temp, "--" .. TEMP_UNIT)
     set_text(APP.ui.weather_feels, state.error ~= "" and clip(state.error, 23) or T("RESOLVING LOCATION", "正在解析位置"))
     set_text(APP.ui.weather_humidity, T("HUM --%", "湿度 --%"))
     set_text(APP.ui.weather_gust, T("GUST --", "阵风 --"))
@@ -1472,13 +1517,13 @@ local function render_weather()
   lv_obj_set_style_text_color(APP.ui.weather_alert_text, C.bg, MAIN)
   set_text(APP.ui.weather_condition, current.label or string.upper(kind))
   set_text(APP.ui.weather_source, state.stale and T("STALE", "过期") or T("NOW", "当前"))
-  set_text(APP.ui.weather_temp, current.temp_text or "--℃")
-  set_text(APP.ui.weather_feels, T("FEELS ", "体感 ") .. tostring(math.floor((tonumber(current.feels) or 0) + 0.5)) .. "℃")
+  set_text(APP.ui.weather_temp, current.temp_text or ("--" .. TEMP_UNIT))
+  set_text(APP.ui.weather_feels, T("FEELS ", "体感 ") .. tostring(math.floor((tonumber(current.feels) or 0) + 0.5)) .. TEMP_UNIT)
   set_text(APP.ui.weather_humidity, T("HUM ", "湿度 ") .. tostring(current.humidity or 0) .. "%")
   set_text(APP.ui.weather_gust, T("GUST ", "阵风 ") .. tostring(math.floor((tonumber(current.wind_gust) or 0) + 0.5)))
   set_text(APP.ui.weather_wind, T("WIND ", "风 ") .. tostring(math.floor((tonumber(current.wind_speed) or 0) + 0.5))
     .. T(" GUST ", " 阵风 ") .. tostring(math.floor((tonumber(current.wind_gust) or 0) + 0.5))
-    .. " " .. string.format("%03d", tonumber(current.wind_direction) or 0) .. "°")
+    .. " " .. string.format("%03d", tonumber(current.wind_direction) or 0) .. T("deg", "°"))
   local data_time = tostring(current.time or ""):sub(12, 16)
   set_text(APP.ui.weather_updated, (state.stale and T("STALE ", "过期 ") or T("DATA ", "数据 ")) .. data_time
     .. T(" SYNC ", " 同步 ") .. tostring(APP.weather_sync_text or "--:--"))
@@ -1654,7 +1699,7 @@ end
 local function start_client()
   if APP.client then APP.client:stop() end
   APP.remote.connected = false
-  APP.connection_detail = "connecting to " .. tostring(config.host) .. ":" .. tostring(config.port)
+  APP.connection_detail = T("connecting to ", "正在连接 ") .. tostring(config.host) .. ":" .. tostring(config.port)
   update_labels()
   APP.client = CodexClient.new(config, {
     on_event = function(doc)
@@ -1762,6 +1807,7 @@ apply_remote_state("idle")
 request_time_sync(true)
 update_clock()
 APP.weather = WeatherClient.new({
+  language = UI_LANG,
   on_update = function(state)
     local updated_at = state and tonumber(state.updated_at_ms) or 0
     if state and state.valid and not state.loading and not state.stale
@@ -1782,6 +1828,8 @@ APP.next_weather_ms = now_ms() + WEATHER_FALLBACK_REFRESH_MS
 bind_keys()
 
 APP.web = HoloWeb.new({
+  language = UI_LANG,
+  requested_language = REQUESTED_UI_LANG,
   config = config,
   config_path = APP_DIR .. "/config.lua",
   route_base = (app and app.route_base and app.route_base()) or ("/" .. APP_SLUG),
@@ -1821,11 +1869,11 @@ APP.web = HoloWeb.new({
       activity = APP.remote.activity,
       session_meme = SESSION_MEMES[APP.session_meme_index] and SESSION_MEMES[APP.session_meme_index].label or "",
       font = {
-        family = CONSOLE and CONSOLE.ready and CONSOLE.family or T("Clawd UI", "监控中文"),
+        family = CONSOLE and CONSOLE.ready and CONSOLE.family or "LVGL Montserrat",
         source = CONSOLE and CONSOLE.ready and CONSOLE.source or "builtin font fallback",
         rendering = CONSOLE and CONSOLE.ready and CONSOLE.rendering or T("LVGL grayscale fallback", "LVGL 灰度兜底"),
-        loaded = CONSOLE and CONSOLE.ready or #APP.font_handles > 0,
-        loaded_sizes = #APP.font_handles,
+        loaded = CONSOLE and CONSOLE.ready or false,
+        loaded_sizes = CONSOLE and CONSOLE.ready and 5 or 0,
         error = APP.font_error,
       },
     }

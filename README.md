@@ -21,12 +21,15 @@ sprite from clawdmoji project.
 - Codex state, project, tool category, and connection state appear below Clawd.
 - The lower panel uses a square-edged Powerline/Oh My Zsh prompt treatment.
   Its state and state-timer segments inherit the current Clawd state color.
-- All device UI labels use the bundled monospaced `Clawd Console` face, an
-  ASCII-subsetted Cascadia Mono derivative. A native application module
-  rasterizes 10, 12, 14, 16, and 28 px text with horizontal RGB subpixel
-  coverage, pre-composites it into RGB565, and sends the finished pixels to
-  small LVGL canvases. Missing/corrupt assets safely fall back to firmware
-  Montserrat instead of leaving blank labels.
+- At startup the app normalizes `language`, `locale`, or `lang` from
+  `/sd/apps/settings.json`. English uses the bundled monospaced `Clawd Console`
+  face; Chinese uses the bundled `AIDA Noto Sans SC` face. The same fixed
+  language is passed to the screen, weather client, and WebUI.
+- A native application module rasterizes 10, 12, 14, 16, and 28 px text with
+  horizontal RGB subpixel coverage, pre-composites it into RGB565, and sends the
+  finished pixels to small LVGL canvases. If Chinese rendering cannot start,
+  the screen falls back to readable English firmware text and reports the real
+  font error in the WebUI instead of leaving blank labels.
 - Non-idle states show `Cmm:ss` for the current chat/turn and `Smm:ss` for the
   uninterrupted current state, followed by 5h usage, reset time, and week use.
 - A fresh IDLE screen labels those slots as `C CHAT / S STATE`; after a session
@@ -194,9 +197,12 @@ contents are not sent.
 ## Tests
 
 ```powershell
-node --test bridge/codex-holocubic-hook.test.js
-npx -y luaparse -q package/weather_client.lua package/config.lua package/codex_client.lua package/web.lua package/timezone.lua
+npx -y luaparse -q package/main.lua package/weather_client.lua package/config.lua package/codex_client.lua package/web.lua package/timezone.lua package/console_text.lua package/i18n.lua
+npx -y --package=fengari-node-cli fengari tools/test_i18n.lua
+npx -y --package=fengari-node-cli fengari tools/test_weather_i18n.lua
+npx -y --package=fengari-node-cli fengari tools/test_web_i18n.lua
 npx -y --package=fengari-node-cli fengari tools/test_timezone.lua
+node --test bridge/codex-holocubic-hook.test.js
 ```
 
 ## License and artwork

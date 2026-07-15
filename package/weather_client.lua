@@ -67,13 +67,11 @@ local function weather_kind(code)
   return "cloudy"
 end
 
-local function ui_is_zh()
-  local raw = read_text(SETTINGS_PATH) or ""
-  local lang = raw:match('"language"%s*:%s*"([^"]+)"') or ""
-  return tostring(lang):lower():match("^zh") ~= nil
+local function ui_is_zh(language)
+  return tostring(language or ""):lower():match("^zh") ~= nil
 end
 
-local function weather_label(kind)
+local function weather_label(kind, language)
   local labels_en = {
     clear = "CLEAR", partly = "PARTLY", cloudy = "CLOUDY", overcast = "OVERCAST",
     drizzle = "DRIZZLE", rain = "RAIN", storm = "STORM", snow = "SNOW",
@@ -84,8 +82,8 @@ local function weather_label(kind)
     drizzle = "小雨", rain = "雨", storm = "雷雨", snow = "雪",
     fog = "雾", wind = "风",
   }
-  local labels = ui_is_zh() and labels_zh or labels_en
-  return labels[kind] or (ui_is_zh() and "天气" or "WEATHER")
+  local labels = ui_is_zh(language) and labels_zh or labels_en
+  return labels[kind] or (ui_is_zh(language) and "天气" or "WEATHER")
 end
 
 local function climate_mood(temp, humidity)
@@ -106,13 +104,14 @@ function WeatherClient.new(opts)
     latitude = nil,
     longitude = nil,
     timezone = "Asia/Shanghai",
+    language = tostring(opts.language or "en"),
     on_update = opts.on_update,
     on_status = opts.on_status,
     state = {
       valid = false,
       loading = false,
       stale = false,
-      city = ui_is_zh() and "天气" or "WEATHER",
+      city = ui_is_zh(opts.language) and "天气" or "WEATHER",
       address = "",
       error = "",
       updated_at_ms = 0,
@@ -152,7 +151,7 @@ function WeatherClient:fail(message)
   self.inflight = false
   self.state.loading = false
   self.state.stale = self.state.valid
-  self.state.error = tostring(message or "weather unavailable")
+  self.state.error = tostring(message or (ui_is_zh(self.language) and "天气不可用" or "weather unavailable"))
   self:emit_status("error", self.state.error)
   self:emit_update()
 end
@@ -162,15 +161,15 @@ function WeatherClient:resolve_location(address, done)
     done(true)
     return
   end
-  if not http or not http.get then done(false, "HTTP missing"); return end
+  if not http or not http.get then done(false, ui_is_zh(self.language) and "缺少 HTTP 接口" or "HTTP missing"); return end
   local url = "https://geocoding-api.open-meteo.com/v1/search?name=" .. url_encode(address)
-    .. "&count=1&language=en&format=json"
+    .. "&count=1&language=" .. (ui_is_zh(self.language) and "zh" or "en") .. "&format=json"
   http.get(url, { timeout = 12000, headers = { ["Accept-Encoding"] = "identity" } }, function(code, body)
     if not self.running then return end
     local doc = code == 200 and decode(body) or nil
     local result = doc and type(doc.results) == "table" and doc.results[1] or nil
     if type(result) ~= "table" or not tonumber(result.latitude) or not tonumber(result.longitude) then
-      done(false, "location " .. tostring(code or "?"))
+      done(false, (ui_is_zh(self.language) and "位置 " or "location ") .. tostring(code or "?"))
       return
     end
     self.resolved_for = address
@@ -186,7 +185,9 @@ function WeatherClient:parse_forecast(doc)
   local current = type(doc.current) == "table" and doc.current or nil
   local hourly = type(doc.hourly) == "table" and doc.hourly or nil
   local daily = type(doc.daily) == "table" and doc.daily or nil
-  if not current or not hourly or type(hourly.time) ~= "table" then return false, "forecast shape" end
+  if not current or not hourly or type(hourly.time) ~= "table" then
+    return false, ui_is_zh(self.language) and "天气数据格式错误" or "forecast shape"
+  end
 
   local kind = weather_kind(current.weather_code)
   local gust = number(current.wind_gusts_10m, 0)
@@ -194,7 +195,7 @@ function WeatherClient:parse_forecast(doc)
   self.state.current = {
     time = tostring(current.time or ""),
     temp = number(current.temperature_2m, 0),
-    temp_text = tostring(rounded(current.temperature_2m)) .. "℃",
+    temp_text = tostring(rounded(current.temperature_2m)) .. (ui_is_zh(self.language) and "℃" or "C"),
     feels = number(current.apparent_temperature, current.temperature_2m),
     humidity = rounded(current.relative_humidity_2m),
     precipitation = number(current.precipitation, 0),
@@ -203,7 +204,7 @@ function WeatherClient:parse_forecast(doc)
     wind_gust = gust,
     code = tonumber(current.weather_code) or -1,
     kind = kind,
-    label = weather_label(kind),
+    label = weather_label(kind, self.language),
     mood = climate_mood(current.temperature_2m, current.relative_humidity_2m),
   }
 
@@ -243,7 +244,7 @@ function WeatherClient:parse_forecast(doc)
       date = tostring(daily.time[2] or ""),
       code = tonumber(daily.weather_code and daily.weather_code[2]) or -1,
       kind = tomorrow_kind,
-      label = weather_label(tomorrow_kind),
+      label = weather_label(tomorrow_kind, self.language),
       temp_min = rounded(daily.temperature_2m_min and daily.temperature_2m_min[2]),
       temp_max = rounded(daily.temperature_2m_max and daily.temperature_2m_max[2]),
       pop = rounded(daily.precipitation_probability_max and daily.precipitation_probability_max[2]),
@@ -254,7 +255,7 @@ function WeatherClient:parse_forecast(doc)
     self.state.tomorrow = {}
   end
   self.state.rain_probability = rounded(max_pop)
-  self.state.rain_time = first_rain or (ui_is_zh() and "无雨" or "DRY")
+  self.state.rain_time = first_rain or (ui_is_zh(self.language) and "无雨" or "DRY")
   self.state.max_gust = max_gust
   self.state.valid = true
   self.state.loading = false
@@ -268,7 +269,7 @@ function WeatherClient:fetch()
   if not self.running or self.inflight then return end
   self.inflight = true
   self.state.loading = true
-  self:emit_status("loading", "resolving location")
+  self:emit_status("loading", ui_is_zh(self.language) and "正在解析位置" or "resolving location")
   self:emit_update()
   local address = self:load_location()
   self:resolve_location(address, function(ok, err)
@@ -284,12 +285,12 @@ function WeatherClient:fetch()
     local daily_url = base_url
       .. "&forecast_days=3"
       .. "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_gusts_10m_max"
-    self:emit_status("loading", "forecast")
+    self:emit_status("loading", ui_is_zh(self.language) and "正在获取预报" or "forecast")
     http.get(forecast_url, { timeout = 12000, headers = { ["Accept-Encoding"] = "identity" } }, function(code, body)
       if not self.running then return end
       local doc = code == 200 and decode(body) or nil
-      if not doc then self:fail("forecast " .. tostring(code or "?")); return end
-      self:emit_status("loading", "daily")
+      if not doc then self:fail((ui_is_zh(self.language) and "天气预报 " or "forecast ") .. tostring(code or "?")); return end
+      self:emit_status("loading", ui_is_zh(self.language) and "正在获取明日天气" or "daily")
       http.get(daily_url, { timeout = 12000, headers = { ["Accept-Encoding"] = "identity" } }, function(daily_code, daily_body)
         if not self.running then return end
         self.inflight = false
@@ -300,10 +301,10 @@ function WeatherClient:fetch()
         local parsed, parse_err = self:parse_forecast(doc)
         if not parsed then self:fail(parse_err); return end
         if not daily_doc then
-          self.state.error = "daily " .. tostring(daily_code or "?")
+          self.state.error = (ui_is_zh(self.language) and "明日天气 " or "daily ") .. tostring(daily_code or "?")
           self:emit_status("partial", self.state.error)
         else
-          self:emit_status("online", "updated")
+          self:emit_status("online", ui_is_zh(self.language) and "已更新" or "updated")
         end
         self:emit_update()
       end)
