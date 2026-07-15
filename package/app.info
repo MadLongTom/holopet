@@ -3,4 +3,4 @@ kind = app
 entry = main.lua
 icon = main.png
 description = Codex status companion with weather and session monitor
-version = 1.3.0
+version = 1.3.1

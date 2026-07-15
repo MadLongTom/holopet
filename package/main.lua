@@ -27,6 +27,7 @@ local APP_SLUG = APP_ID
 
 local config = dofile(APP_DIR .. "/config.lua")
 local I18n = dofile(APP_DIR .. "/i18n.lua")
+local FontMetrics = dofile(APP_DIR .. "/font_metrics.lua")
 local CodexClient = dofile(APP_DIR .. "/codex_client.lua")
 local HoloWeb = dofile(APP_DIR .. "/web.lua")
 local WeatherClient = dofile(APP_DIR .. "/weather_client.lua")
@@ -75,7 +76,7 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.3.0",
+  VERSION = "1.3.1",
   running = true,
   timer = nil,
   client = nil,
@@ -156,11 +157,6 @@ local FALLBACK_FONT_14 = rawget(_G, "LV_FONT_MONTSERRAT_14") or 14
 local FALLBACK_FONT_16 = rawget(_G, "LV_FONT_MONTSERRAT_16") or 16
 local FALLBACK_FONT_28 = rawget(_G, "LV_FONT_MONTSERRAT_28") or FALLBACK_FONT_16
 APP.font_handles = {}
-local FONT_10 = { size = 10, fallback = FALLBACK_FONT_10 }
-local FONT_12 = { size = 12, fallback = FALLBACK_FONT_12 }
-local FONT_14 = { size = 14, fallback = FALLBACK_FONT_14 }
-local FONT_16 = { size = 16, fallback = FALLBACK_FONT_16 }
-local FONT_28 = { size = 28, fallback = FALLBACK_FONT_28 }
 local ALIGN_LEFT = rawget(_G, "LV_TEXT_ALIGN_LEFT") or 0
 local ALIGN_CENTER = rawget(_G, "LV_TEXT_ALIGN_CENTER") or 1
 local ALIGN_RIGHT = rawget(_G, "LV_TEXT_ALIGN_RIGHT") or 2
@@ -213,6 +209,14 @@ APP.system_language = SYSTEM_UI_LANG
 APP.language_mode = UI_LANGUAGE_MODE
 TEMP_UNIT = T("C", "℃")
 APP.connection_detail = T("waiting for bridge", "等待桥接服务")
+
+-- Keep Chinese and English line boxes optically equivalent. The vector
+-- renderer consumes render_size, while size remains the public UI role.
+local FONT_10 = FontMetrics.role(10, FALLBACK_FONT_10, UI_ZH)
+local FONT_12 = FontMetrics.role(12, FALLBACK_FONT_12, UI_ZH)
+local FONT_14 = FontMetrics.role(14, FALLBACK_FONT_14, UI_ZH)
+local FONT_16 = FontMetrics.role(16, FALLBACK_FONT_16, UI_ZH)
+local FONT_28 = FontMetrics.role(28, FALLBACK_FONT_28, UI_ZH)
 
 local IDLE_VISUALS = ClawdPack.events.Idle or {}
 
@@ -450,6 +454,7 @@ local function lv_label_create(parent)
     x = 0,
     y = 0,
     size = 12,
+    y_offset = 0,
     color = C.cream,
     background = C.bg,
     align = ALIGN_LEFT,
@@ -480,7 +485,7 @@ local function lv_obj_set_pos(obj, x, y)
   if not is_console_text(obj) then return raw_lv_obj_set_pos(obj, x, y) end
   obj.x, obj.y = math.floor(x or 0), math.floor(y or 0)
   if obj.native then return raw_lv_obj_set_pos(obj.native, obj.x, obj.y) end
-  if obj.canvas then return raw_lv_obj_set_pos(obj.canvas, obj.x, obj.y) end
+  if obj.canvas then return raw_lv_obj_set_pos(obj.canvas, obj.x, obj.y + (obj.y_offset or 0)) end
 end
 
 local function lv_obj_set_style_text_color(obj, color, part)
@@ -517,11 +522,11 @@ render_console_text = function(token)
       disable_console(CONSOLE.error ~= "" and CONSOLE.error or "console canvas create failed")
       return false
     end
-    raw_lv_obj_set_pos(token.canvas, token.x, token.y)
+    raw_lv_obj_set_pos(token.canvas, token.x, token.y + (token.y_offset or 0))
     if lv_obj_set_style_bg_opa then pcall(lv_obj_set_style_bg_opa, token.canvas, 0, MAIN) end
   end
   local data, raster_error = CONSOLE:raster(token.text, token.width, token.height,
-    token.size, token.color, token.background, compositor_align(token.align))
+    token.render_size or token.size, token.color, token.background, compositor_align(token.align))
   if not data then
     disable_console(raster_error)
     return false
@@ -549,6 +554,8 @@ local function style_text(obj, color, font, align)
   if is_console_text(obj) then
     obj.color = tonumber(color) or C.cream
     obj.size = tonumber(font_role.size) or 12
+    obj.render_size = tonumber(font_role.render_size) or obj.size
+    obj.y_offset = tonumber(font_role.y_offset) or 0
     obj.fallback_font = font_role.fallback or FALLBACK_FONT_12
     obj.align = align or ALIGN_LEFT
     if obj.native then
@@ -559,6 +566,7 @@ local function style_text(obj, color, font, align)
     elseif obj.text ~= nil then
       render_console_text(obj)
     end
+    if obj.canvas then raw_lv_obj_set_pos(obj.canvas, obj.x, obj.y + obj.y_offset) end
     return
   end
   raw_lv_obj_set_style_text_color(obj, color, MAIN)
