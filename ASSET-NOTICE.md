@@ -28,3 +28,10 @@ included under `native/aida_font`; no external HoloCubic app repository is
 required to reproduce the module. It embeds Sean Barrett's `stb_truetype` and
 `stb_image`, which are available under the MIT license or public domain
 dedication.
+
+# Chinese TrueType font notice
+
+The `package/font/aida_noto_sans_sc.ttf` asset is the bundled CJK-safe
+fallback font shared with AIDA Monitor. It is based on Adobe Source Han Sans /
+Noto Sans CJK and licensed under the SIL Open Font License 1.1. The full font
+license is included at `package/font/AIDA-NOTO-OFL.txt`.

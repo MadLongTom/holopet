@@ -29,11 +29,11 @@ function ConsoleText.open(options)
   options = options or {}
   local self = setmetatable({
     ready = false,
-    family = "Clawd Console",
-    source = "Cascadia Mono",
-    rendering = "RGB subpixel / RGB565 compositor",
-    module_path = tostring(options.module_path or "/sd/apps/holo_pet/modules/aida_font.so"),
-    font_path = tostring(options.font_path or "/sd/apps/holo_pet/font/clawd_console.ttf"),
+    family = tostring(options.family or "AIDA Noto Sans SC"),
+    source = "stb_truetype",
+    rendering = "TrueType / RGB565 compositor",
+    module_path = tostring(options.module_path or "/sd/apps/holopet/modules/aida_font.so"),
+    font_path = tostring(options.font_path or "/sd/apps/holopet/font/aida_noto_sans_sc.ttf"),
     module = nil,
     error = "",
   }, ConsoleText)
