@@ -5,6 +5,7 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { normalizeUsage } = require("./codex-usage");
 
 const HOST = process.env.HOLOCUBIC_BRIDGE_HOST || "0.0.0.0";
 const PORT = Number(process.env.HOLOCUBIC_BRIDGE_PORT || 17321);
@@ -425,41 +426,6 @@ function findRateLimits(value) {
   return null;
 }
 
-function field(value, snake, camel) {
-  return value?.[snake] ?? value?.[camel] ?? null;
-}
-
-function clockText(epochSeconds) {
-  if (!Number.isFinite(Number(epochSeconds))) return "--:--";
-  const date = new Date(Number(epochSeconds) * 1000);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function normalizeUsage(limits, sampledAt) {
-  if (!limits || typeof limits !== "object") return null;
-  const windows = [limits.primary, limits.secondary].filter(Boolean);
-  const duration = (item) => Number(field(item, "window_minutes", "windowDurationMins"));
-  const fiveHour = windows.find((item) => duration(item) === 300) || limits.primary;
-  const weekly = windows.find((item) => duration(item) === 10080) || limits.secondary;
-  if (!fiveHour && !weekly) return null;
-  const resetAt = field(fiveHour, "resets_at", "resetsAt");
-  const rawFivePercent = field(fiveHour, "used_percent", "usedPercent");
-  const rawWeeklyPercent = field(weekly, "used_percent", "usedPercent");
-  if (rawFivePercent === null || rawWeeklyPercent === null) return null;
-  const fivePercent = Number(rawFivePercent);
-  const weeklyPercent = Number(rawWeeklyPercent);
-  if (!Number.isFinite(fivePercent) || !Number.isFinite(weeklyPercent)) return null;
-  return {
-    five_hour_percent: fivePercent,
-    five_hour_resets_at: Number(resetAt) || 0,
-    five_hour_reset_text: clockText(resetAt),
-    weekly_percent: weeklyPercent,
-    limit_id: String(field(limits, "limit_id", "limitId") || ""),
-    limit_name: String(field(limits, "limit_name", "limitName") || ""),
-    sampled_at: Number(sampledAt) || Date.now(),
-  };
-}
-
 function readLocalUsage() {
   const files = recentJsonls(SESSIONS_DIR, 6);
   let fallback = null;
@@ -486,9 +452,8 @@ function refreshUsage() {
   if (!usage) return false;
   const before = status.usage;
   const changed = !before
-    || before.five_hour_percent !== usage.five_hour_percent
-    || before.five_hour_resets_at !== usage.five_hour_resets_at
-    || before.weekly_percent !== usage.weekly_percent;
+    || before.weekly_percent !== usage.weekly_percent
+    || before.weekly_resets_at !== usage.weekly_resets_at;
   status = { ...status, usage };
   if (changed) broadcast(status);
   return changed;

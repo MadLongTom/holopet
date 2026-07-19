@@ -33,7 +33,8 @@ sprite from clawdmoji project.
   the screen falls back to readable English firmware text and reports the real
   font error in the WebUI instead of leaving blank labels.
 - Non-idle states show `Cmm:ss` for the current chat/turn and `Smm:ss` for the
-  uninterrupted current state, followed by 5h usage, reset time, and week use.
+  uninterrupted current state, followed by weekly usage, a proportional bar,
+  and the weekly reset date.
 - A fresh IDLE screen labels those slots as `C CHAT / S STATE`; after a session
   completes, it keeps the previous total as `Cmm:ss / LAST`.
 - The top bar shows the device-local time beside the bridge status. At startup,
@@ -147,11 +148,13 @@ App Server over stdio, so this bridge does not start or interfere with a second
 authenticated Codex process. Instead, every 30 seconds it reads only the most
 recent local `rate_limits` object already emitted into Codex session telemetry.
 
-Only these fields are retained and sent to the device:
+Only the 10080-minute weekly window is retained and sent to the device:
 
-- 300-minute window `used_percent`
-- 300-minute window `resets_at`, formatted as local `HH:MM`
-- 10080-minute window `used_percent`
+- weekly `used_percent`
+- weekly `resets_at`, formatted as local `MM/DD`
+
+Both the current weekly-only primary-window shape and the older secondary-
+window shape are accepted. Legacy 300-minute fields are ignored.
 
 Prompts, responses, tool arguments, and tool results are not parsed or sent.
 

@@ -115,6 +115,14 @@ function ConsoleText:blit(canvas, data, width, height)
   return true
 end
 
+function ConsoleText:stats()
+  if not self.ready or not self.module or type(self.module.stats) ~= "function" then
+    return nil
+  end
+  local ok, result = pcall(self.module.stats)
+  return ok and type(result) == "table" and result or nil
+end
+
 function ConsoleText:validate(parent)
   if not self.ready then return false, self.error end
   local canvas = self:create_canvas(parent, 16, 16)

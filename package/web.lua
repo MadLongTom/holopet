@@ -250,6 +250,7 @@ function Web.new(opts)
       effort = extra.effort or "",
       context = extra.context,
       usage = extra.usage,
+      memory = extra.memory,
       language = self.language,
       requested_language = self.requested_language,
       system_language = self.system_language,

@@ -93,9 +93,16 @@ end
 
 function Client:schedule_reconnect()
   if self.closed then return end
-  if self.reconnect_timer then self.reconnect_timer:unregister() end
-  self.reconnect_timer = tmr.create()
-  self.reconnect_timer:alarm(self.config.reconnect_ms or 2000, tmr.ALARM_SINGLE, function()
+  if self.reconnect_timer then
+    pcall(function() self.reconnect_timer:stop() end)
+    pcall(function() self.reconnect_timer:unregister() end)
+    self.reconnect_timer = nil
+  end
+  local timer = tmr.create()
+  self.reconnect_timer = timer
+  timer:alarm(self.config.reconnect_ms or 2000, tmr.ALARM_SINGLE, function()
+    if self.reconnect_timer == timer then self.reconnect_timer = nil end
+    pcall(function() timer:unregister() end)
     self:connect()
   end)
 end

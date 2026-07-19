@@ -76,7 +76,7 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.3.1",
+  VERSION = "1.4.0",
   running = true,
   timer = nil,
   client = nil,
@@ -89,6 +89,7 @@ local APP = {
   status_visual_loaded = nil,
   gif_active = { status = 1, weather = 1, session = 1 },
   gif_sources = { status = {}, weather = {}, session = {} },
+  gif_swaps = 0,
   current_visual_group = "Idle",
   event_visual_index = 1,
   visual_indices = {},
@@ -109,6 +110,7 @@ local APP = {
   session_meme_index = 1,
   next_session_meme_ms = 0,
   last_page_switch_ms = -1000,
+  last_gc_ms = -1000,
   timing = {
     chat_start_ms = 0,
     state_start_ms = 0,
@@ -116,9 +118,8 @@ local APP = {
     has_completed_chat = false,
   },
   usage = {
-    five_hour_percent = nil,
-    five_hour_reset_text = "--:--",
     weekly_percent = nil,
+    weekly_reset_text = "--/--",
   },
   console_renderer = nil,
   font_error = "",
@@ -490,14 +491,18 @@ end
 
 local function lv_obj_set_style_text_color(obj, color, part)
   if not is_console_text(obj) then return raw_lv_obj_set_style_text_color(obj, color, part) end
-  obj.color = tonumber(color) or C.cream
+  local next_color = tonumber(color) or C.cream
+  if obj.color == next_color then return true end
+  obj.color = next_color
   if obj.native then return raw_lv_obj_set_style_text_color(obj.native, obj.color, part) end
   if obj.text ~= nil then return render_console_text(obj) end
 end
 
 local function lv_obj_set_style_bg_color(obj, color, part)
   local parent_background = OBJECT_BG[OBJECT_PARENT[obj]] or C.bg
-  OBJECT_BG[obj] = blend_color(color, parent_background, OBJECT_BG_OPA[obj] or 255)
+  local next_background = blend_color(color, parent_background, OBJECT_BG_OPA[obj] or 255)
+  if OBJECT_BG[obj] == next_background then return true end
+  OBJECT_BG[obj] = next_background
   local result = raw_lv_obj_set_style_bg_color(obj, color, part)
   for _, token in ipairs(TEXT_CHILDREN[obj] or {}) do
     token.background = OBJECT_BG[obj]
@@ -577,11 +582,13 @@ end
 
 local function set_text(obj, value)
   if not obj then return end
+  local text = tostring(value or "")
   if is_console_text(obj) then
-    obj.text = tostring(value or "")
+    if obj.text == text then return end
+    obj.text = text
     render_console_text(obj)
   else
-    raw_lv_label_set_text(obj, tostring(value or ""))
+    raw_lv_label_set_text(obj, text)
   end
 end
 
@@ -711,14 +718,14 @@ lv_obj_set_size(APP.ui.state_timer, 54, 14)
 lv_obj_set_pos(APP.ui.state_timer, 3, 3)
 style_text(APP.ui.state_timer, C.bg, FONT_10, ALIGN_LEFT)
 
-APP.ui.usage_5h = lv_label_create(APP.ui.panel)
-lv_obj_set_size(APP.ui.usage_5h, 38, 14)
-lv_obj_set_pos(APP.ui.usage_5h, 120, 27)
-style_text(APP.ui.usage_5h, C.peach, FONT_10, ALIGN_LEFT)
+APP.ui.usage_week = lv_label_create(APP.ui.panel)
+lv_obj_set_size(APP.ui.usage_week, 55, 14)
+lv_obj_set_pos(APP.ui.usage_week, 120, 27)
+style_text(APP.ui.usage_week, C.peach, FONT_10, ALIGN_LEFT)
 
 APP.ui.usage_track = lv_obj_create(APP.ui.panel)
-lv_obj_set_size(APP.ui.usage_track, 40, 4)
-lv_obj_set_pos(APP.ui.usage_track, 158, 32)
+lv_obj_set_size(APP.ui.usage_track, 69, 4)
+lv_obj_set_pos(APP.ui.usage_track, 177, 32)
 set_bg(APP.ui.usage_track, C.line, 210, 0)
 
 APP.ui.usage_fill = lv_obj_create(APP.ui.usage_track)
@@ -727,14 +734,9 @@ lv_obj_set_pos(APP.ui.usage_fill, 0, 0)
 set_bg(APP.ui.usage_fill, C.mint, 255, 0)
 
 APP.ui.usage_reset = lv_label_create(APP.ui.panel)
-lv_obj_set_size(APP.ui.usage_reset, 55, 14)
-lv_obj_set_pos(APP.ui.usage_reset, 202, 27)
-style_text(APP.ui.usage_reset, C.dim, FONT_10, ALIGN_LEFT)
-
-APP.ui.usage_week = lv_label_create(APP.ui.panel)
-lv_obj_set_size(APP.ui.usage_week, 39, 14)
-lv_obj_set_pos(APP.ui.usage_week, 258, 27)
-style_text(APP.ui.usage_week, C.peach, FONT_10, ALIGN_RIGHT)
+lv_obj_set_size(APP.ui.usage_reset, 47, 14)
+lv_obj_set_pos(APP.ui.usage_reset, 250, 27)
+style_text(APP.ui.usage_reset, C.dim, FONT_10, ALIGN_RIGHT)
 
 -- Weather instrument: one native 128 x 128 ClawdMoji scene plus a compact
 -- terminal rail. Gesture hints are intentionally omitted.
@@ -1148,7 +1150,27 @@ local function swap_gif(slot, source, x, y)
   sources[active] = nil
   sources[standby] = source
   APP.gif_active[slot] = standby
+  APP.gif_swaps = APP.gif_swaps + 1
   return true
+end
+
+local function memory_snapshot()
+  local native = CONSOLE and CONSOLE.stats and CONSOLE:stats() or nil
+  local lua_kb = nil
+  if type(collectgarbage) == "function" then
+    local ok, value = pcall(collectgarbage, "count")
+    if ok then lua_kb = tonumber(value) end
+  end
+  return {
+    lua_kb = lua_kb,
+    gif_swaps = APP.gif_swaps,
+    internal_free = native and native.internal_free or nil,
+    psram_free = native and native.psram_free or nil,
+    psram_largest = native and native.psram_largest or nil,
+    font_cache_bytes = native and native.cache_bytes or nil,
+    font_cache_entries = native and native.cache_entries or nil,
+    font_renders = native and native.renders or nil,
+  }
 end
 
 local function clear_gif_slot(slot)
@@ -1183,18 +1205,16 @@ local function percent(value)
 end
 
 local function update_usage()
-  local five = percent(APP.usage.five_hour_percent)
   local week = percent(APP.usage.weekly_percent)
-  set_text(APP.ui.usage_5h, five and (T("5H", "5时") .. tostring(five) .. "%") or T("5H--", "5时--"))
-  set_text(APP.ui.usage_reset, "R" .. tostring(APP.usage.five_hour_reset_text or "--:--"))
-  set_text(APP.ui.usage_week, week and (T("W", "周") .. tostring(week) .. "%") or T("W--", "周--"))
+  set_text(APP.ui.usage_week, week and (T("WEEK ", "周 ") .. tostring(week) .. "%") or T("WEEK --", "周 --"))
+  set_text(APP.ui.usage_reset, "R" .. tostring(APP.usage.weekly_reset_text or "--/--"))
 
-  local width = five and math.floor(40 * five / 100) or 1
+  local width = week and math.floor(69 * week / 100) or 1
   if width < 1 then width = 1 end
   lv_obj_set_size(APP.ui.usage_fill, width, 4)
   local color = C.mint
-  if five and five >= 90 then color = C.error
-  elseif five and five >= 70 then color = C.warn end
+  if week and week >= 90 then color = C.error
+  elseif week and week >= 70 then color = C.warn end
   lv_obj_set_style_bg_color(APP.ui.usage_fill, color, MAIN)
 end
 
@@ -1662,9 +1682,8 @@ local function accept_status(doc)
   APP.remote.source = clip(doc.source or "bridge", 24)
   if type(doc.activity) == "table" then APP.remote.activity = doc.activity end
   if type(doc.usage) == "table" then
-    APP.usage.five_hour_percent = doc.usage.five_hour_percent
-    APP.usage.five_hour_reset_text = clip(doc.usage.five_hour_reset_text or "--:--", 8)
     APP.usage.weekly_percent = doc.usage.weekly_percent
+    APP.usage.weekly_reset_text = clip(doc.usage.weekly_reset_text or "--/--", 5)
   end
   APP.connection_detail = APP.remote.event
   if APP.remote.tool ~= "" then APP.connection_detail = APP.connection_detail .. " // " .. APP.remote.tool end
@@ -1888,6 +1907,7 @@ APP.web = HoloWeb.new({
       effort = APP.remote.effort,
       context = APP.remote.context,
       usage = APP.usage,
+      memory = memory_snapshot(),
       idle_variant = APP.idle_index,
       idle_delay_minutes = math.floor((APP.idle_delay_ms or 0) / 60000),
       clock = APP.clock_text,
@@ -1924,6 +1944,10 @@ APP.timer:alarm(250, tmr.ALARM_AUTO, function()
   end
 
   local ts = now_ms()
+  if type(collectgarbage) == "function" and ts - (APP.last_gc_ms or -1000) >= 1000 then
+    APP.last_gc_ms = ts
+    pcall(collectgarbage, "step", 32)
+  end
   if APP.remote.state == "idle" and APP.next_idle_ms > 0 and ts >= APP.next_idle_ms then
     if #IDLE_VISUALS > 0 then random_visual_index("Idle", #IDLE_VISUALS) end
     APP.idle_delay_ms = random_idle_delay_ms()

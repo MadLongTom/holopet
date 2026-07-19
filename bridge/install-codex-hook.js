@@ -97,6 +97,19 @@ function entryContainsMarker(entry) {
   return Array.isArray(entry.hooks) && entry.hooks.some(entryContainsMarker);
 }
 
+function upsertHookEntry(entries, desired) {
+  const current = Array.isArray(entries) ? entries : [];
+  const managed = current.filter(entryContainsMarker);
+  if (managed.length === 1 && JSON.stringify(managed[0]) === JSON.stringify(desired)) {
+    return { entries: current, changed: false, added: false };
+  }
+  return {
+    entries: current.filter((entry) => !entryContainsMarker(entry)).concat(desired),
+    changed: true,
+    added: managed.length === 0,
+  };
+}
+
 function ensureFeatureEnabled(configPath) {
   const original = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
   const newline = original.includes("\r\n") ? "\r\n" : "\n";
@@ -149,16 +162,20 @@ function install(codexHome) {
   if (!settings.hooks || typeof settings.hooks !== "object") settings.hooks = {};
 
   let added = 0;
+  let updated = 0;
   for (const event of EVENTS) {
-    if (!Array.isArray(settings.hooks[event])) settings.hooks[event] = [];
-    if (settings.hooks[event].some(entryContainsMarker)) continue;
-    settings.hooks[event].push({
+    const desired = {
       hooks: [{ type: "command", command, commandWindows, timeout: 5 }],
-    });
-    added += 1;
+    };
+    const result = upsertHookEntry(settings.hooks[event], desired);
+    settings.hooks[event] = result.entries;
+    if (result.changed) {
+      if (result.added) added += 1;
+      else updated += 1;
+    }
   }
 
-  if (added > 0) {
+  if (added > 0 || updated > 0) {
     backupOnce(hooksPath);
     atomicWrite(hooksPath, `${JSON.stringify(settings, null, 2)}\n`);
   }
@@ -166,7 +183,7 @@ function install(codexHome) {
   let startupInstalled = false;
   try { startupInstalled = installStartup(); } catch { startupInstalled = false; }
   const bridgeStarted = startBridgeDetached();
-  return { added, hooksPath, configPath, startupInstalled, bridgeStarted };
+  return { added, updated, hooksPath, configPath, startupInstalled, bridgeStarted };
 }
 
 function uninstall(codexHome) {
@@ -211,6 +228,7 @@ module.exports = {
   install,
   installStartup,
   startBridgeDetached,
+  upsertHookEntry,
   uninstall,
   uninstallStartup,
 };

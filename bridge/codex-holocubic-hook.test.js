@@ -8,7 +8,7 @@ const {
   projectFromCwd,
   responseLooksFailed,
 } = require("./codex-holocubic-hook");
-const { buildStartupCommand } = require("./install-codex-hook");
+const { buildStartupCommand, upsertHookEntry } = require("./install-codex-hook");
 const { EVENTS } = require("./install-codex-hook");
 
 test("maps Codex lifecycle events without leaking prompt text", () => {
@@ -55,4 +55,15 @@ test("builds a hidden Windows startup command with quoted paths", () => {
   assert.match(command, /-WindowStyle Hidden/);
   assert.match(command, /'C:\\Program Files\\nodejs\\node\.exe'/);
   assert.match(command, /'E:\\holo pet\\server\.js'/);
+});
+
+test("migrates managed hook entries from an old repository path", () => {
+  const userEntry = { hooks: [{ type: "command", command: "custom-hook" }] };
+  const oldEntry = { hooks: [{ type: "command", command: "node /old/codex-holocubic-hook.js" }] };
+  const desired = { hooks: [{ type: "command", command: "node /new/codex-holocubic-hook.js" }] };
+  const result = upsertHookEntry([userEntry, oldEntry], desired);
+  assert.equal(result.changed, true);
+  assert.equal(result.added, false);
+  assert.deepEqual(result.entries, [userEntry, desired]);
+  assert.equal(upsertHookEntry(result.entries, desired).changed, false);
 });
