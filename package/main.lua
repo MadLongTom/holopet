@@ -76,9 +76,11 @@ if previous and previous.stop then
 end
 
 local APP = {
-  VERSION = "1.4.0",
+  VERSION = "1.4.1",
   running = true,
   timer = nil,
+  controller_timer = nil,
+  controller_buttons = 0,
   client = nil,
   weather = nil,
   web = nil,
@@ -1797,6 +1799,23 @@ local function bind_keys()
       pcall(function() app.exit() end)
     end
   end)
+
+  local PAD_SELECT, PAD_HOME = 4096, 32768
+  if controller and controller.state and tmr and tmr.create then
+    APP.controller_timer = tmr.create()
+    APP.controller_timer:alarm(40, tmr.ALARM_AUTO, function()
+      if not APP.running then return end
+      local ok, pad = pcall(function() return controller.state("ble-main") end)
+      local buttons = ok and type(pad) == "table" and tonumber(pad.buttons) or 0
+      buttons = buttons or 0
+      local pressed = buttons & (~APP.controller_buttons)
+      APP.controller_buttons = buttons
+      if (pressed & (PAD_SELECT | PAD_HOME)) ~= 0 then
+        APP.stop("controller")
+        if app and app.exit then pcall(function() app.exit() end) end
+      end
+    end)
+  end
 end
 
 function APP.stop(reason)
@@ -1822,6 +1841,11 @@ function APP.stop(reason)
     pcall(function() APP.reload_timer:stop() end)
     pcall(function() APP.reload_timer:unregister() end)
     APP.reload_timer = nil
+  end
+  if APP.controller_timer then
+    pcall(function() APP.controller_timer:stop() end)
+    pcall(function() APP.controller_timer:unregister() end)
+    APP.controller_timer = nil
   end
 
   clear_gif_slot("status")
